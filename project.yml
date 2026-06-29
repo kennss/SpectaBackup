@@ -40,6 +40,8 @@ targets:
         INFOPLIST_FILE: SpectaBackup/App/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_OBJC_BRIDGING_HEADER: SpectaBackup/Services/Infra/Infra-Bridging.h
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/SpectaBackup/Services/Infra/Argon2"
         CODE_SIGN_ENTITLEMENTS: SpectaBackup/App/SpectaBackup.entitlements
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO

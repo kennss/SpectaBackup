@@ -15,4 +15,7 @@
 #include <sys/attr.h>
 #include <sys/mount.h>
 
+// Vendored libargon2 (P-H-C reference, public domain) for password-based key derivation.
+#include "argon2.h"
+
 #endif /* INFRA_BRIDGING_H */
