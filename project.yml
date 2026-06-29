@@ -1,0 +1,63 @@
+# @file        project.yml
+# @description XcodeGen spec for SpectaBackup — a non-sandboxed Developer ID macOS backup app.
+#              Generates SpectaBackup.xcodeproj. Run `xcodegen generate` after editing.
+# @author      Kennt Kim
+# @company     Calida Lab
+# @created     2026-06-29
+# @lastUpdated 2026-06-29
+
+name: SpectaBackup
+options:
+  bundleIdPrefix: ai.calidalab
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: "8677QL77VJ"
+    ENABLE_HARDENED_RUNTIME: YES
+
+targets:
+  SpectaBackup:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: SpectaBackup
+    dependencies:
+      - sdk: libsqlite3.tbd
+    settings:
+      base:
+        PRODUCT_NAME: SpectaBackup
+        PRODUCT_BUNDLE_IDENTIFIER: ai.calidalab.spectabackup
+        INFOPLIST_FILE: SpectaBackup/App/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_OBJC_BRIDGING_HEADER: SpectaBackup/Services/Infra/Infra-Bridging.h
+        CODE_SIGN_ENTITLEMENTS: SpectaBackup/App/SpectaBackup.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+
+  SpectaBackupTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: SpectaBackupTests
+    dependencies:
+      - target: SpectaBackup
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.calidalab.spectabackup.tests
+        GENERATE_INFOPLIST_FILE: YES

@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Xcode / build artifacts
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# XcodeGen output (regenerate with `xcodegen generate`)
+SpectaBackup.xcodeproj/
+
+# Design team handoff originals (used assets live in Assets.xcassets)
+design_handoff_spectabackup/
