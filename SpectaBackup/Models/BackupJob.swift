@@ -58,6 +58,9 @@ struct BackupJob: Codable, Sendable, Identifiable, Hashable {
     var excludeGlobs: [String]
     var retention: RetentionPolicy
     var isEnabled: Bool
+    /// When true, this job backs up into an encrypted dedup repo (DedupEngine) instead of the
+    /// plaintext snapshot engine. The repo password lives in the Keychain, never in config.json.
+    var encryptionEnabled: Bool
     let createdAt: Date
 
     init(id: UUID = UUID(),
@@ -68,6 +71,7 @@ struct BackupJob: Codable, Sendable, Identifiable, Hashable {
          excludeGlobs: [String] = [],
          retention: RetentionPolicy = .automatic,
          isEnabled: Bool = true,
+         encryptionEnabled: Bool = false,
          createdAt: Date = Date()) {
         self.id = id
         self.name = name
@@ -77,6 +81,26 @@ struct BackupJob: Codable, Sendable, Identifiable, Hashable {
         self.excludeGlobs = excludeGlobs
         self.retention = retention
         self.isEnabled = isEnabled
+        self.encryptionEnabled = encryptionEnabled
         self.createdAt = createdAt
+    }
+
+    // Backward-compatible decoding: `encryptionEnabled` is absent in repos created before encryption.
+    enum CodingKeys: String, CodingKey {
+        case id, name, sources, destination, trigger, excludeGlobs, retention, isEnabled, encryptionEnabled, createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        sources = try c.decode([URL].self, forKey: .sources)
+        destination = try c.decode(URL.self, forKey: .destination)
+        trigger = try c.decode(TriggerMode.self, forKey: .trigger)
+        excludeGlobs = try c.decode([String].self, forKey: .excludeGlobs)
+        retention = try c.decode(RetentionPolicy.self, forKey: .retention)
+        isEnabled = try c.decode(Bool.self, forKey: .isEnabled)
+        encryptionEnabled = try c.decodeIfPresent(Bool.self, forKey: .encryptionEnabled) ?? false
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
     }
 }

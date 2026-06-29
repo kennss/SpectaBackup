@@ -17,6 +17,17 @@
 
 import Foundation
 
+enum EncryptedBackupError: Error, CustomStringConvertible {
+    case passwordMissing
+    case repoNotInitialized
+    var description: String {
+        switch self {
+        case .passwordMissing: return "no repo password in Keychain for this encrypted job"
+        case .repoNotInitialized: return "encrypted repo not initialized — enable encryption in Settings first"
+        }
+    }
+}
+
 actor BackupRunner {
 
     struct PassResult: Sendable {
@@ -28,6 +39,9 @@ actor BackupRunner {
     func run(job: BackupJob,
              quietWindow: TimeInterval = 0,
              progress: @escaping @Sendable (BackupProgress) -> Void) async throws -> PassResult {
+        if job.encryptionEnabled {
+            return try await runEncrypted(job: job, progress: progress)
+        }
         let caps = try DestinationProbe.probe(destination: job.destination)
         if caps.strategy == .sparsebundle {
             return try await runInsideSparsebundle(job: job, quietWindow: quietWindow,
@@ -46,6 +60,47 @@ actor BackupRunner {
                                            quietWindow: quietWindow, progress: progress)
         await applyRetention(job: job, snapshotsDir: snapshotsDir, catalog: catalog)
         return PassResult(snapshot: rec, capabilities: caps)
+    }
+
+    /// Encrypted path: unlock the dedup repo and run DedupEngine, recording the snapshot in the same
+    /// catalog so the history/restore UI stays unified. The repo is created in Settings (where the
+    /// recovery key can be shown), not here. Encrypted-repo retention (prune/GC) is a follow-up.
+    private func runEncrypted(job: BackupJob,
+                              progress: @escaping @Sendable (BackupProgress) -> Void) async throws -> PassResult {
+        guard let password = KeychainStorage.password(for: job.id) else {
+            throw EncryptedBackupError.passwordMissing
+        }
+        let caps = try DestinationProbe.probe(destination: job.destination)
+        let jobRoot = Self.jobRoot(for: job)
+        try FileManager.default.createDirectory(at: jobRoot, withIntermediateDirectories: true)
+        let backend = try LocalBackend(root: jobRoot.appendingPathComponent("repo", isDirectory: true))
+        guard await RepoManager.isInitialized(backend) else {
+            throw EncryptedBackupError.repoNotInitialized
+        }
+
+        let (config, keys) = try await RepoManager.unlock(backend: backend, password: Data(password.utf8))
+        let engine = DedupEngine(backend: backend, keys: keys, chunker: config.chunker)
+
+        let catalog = try CatalogStore(path: jobRoot.appendingPathComponent("catalog.sqlite").path)
+        let now = Date()
+        let seqId = try await catalog.beginSnapshot(jobID: job.id, timestamp: now, sourceSnapshotID: nil)
+        let snapshotID = "enc-\(seqId)"
+        let start = Date()
+        do {
+            let snap = try await engine.backUp(sources: job.sources, snapshotID: snapshotID,
+                                               now: now.timeIntervalSince1970)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000)
+            try await catalog.markComplete(seqId: seqId, dirName: snapshotID, fileCount: snap.fileCount,
+                                           logicalBytes: Int64(snap.totalBytes), addedBlocks: 0, durationMs: durationMs)
+            let rec = SnapshotRecord(seqId: seqId, jobID: job.id, timestamp: now, dirName: snapshotID,
+                                     status: .complete, fileCount: snap.fileCount,
+                                     logicalBytes: Int64(snap.totalBytes), addedBlocks: 0,
+                                     durationMs: durationMs, sourceSnapshotID: nil)
+            return PassResult(snapshot: rec, capabilities: caps)
+        } catch {
+            try? await catalog.markFailed(seqId: seqId)
+            throw error
+        }
     }
 
     /// Sparsebundle path: attach an APFS image on the (clone/hardlink-less) destination and run the

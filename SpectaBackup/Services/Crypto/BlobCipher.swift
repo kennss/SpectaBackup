@@ -62,4 +62,28 @@ struct BlobCipher: Sendable {
     private func objectKey(for blobID: Data) -> SymmetricKey {
         HKDF<SHA256>.deriveKey(inputKeyMaterial: masterEncKey, info: blobID, outputByteCount: 32)
     }
+
+    // MARK: - Repo metadata (pack index, trees, snapshots)
+
+    /// Encrypt non-content-addressed repo metadata. Unlike blobs these aren't deduplicated, so a
+    /// fresh random nonce is used (carried in the combined output). `context` (e.g. the object key)
+    /// scopes the derived key so objects can't be swapped between slots.
+    func sealMetadata(_ plaintext: Data, context: String) throws -> Data {
+        let box = try AES.GCM.seal(plaintext, using: metadataKey(context))
+        guard let combined = box.combined else { throw RepoCryptoError.sealFailed }
+        return combined
+    }
+
+    func openMetadata(_ data: Data, context: String) throws -> Data {
+        do {
+            return try AES.GCM.open(try AES.GCM.SealedBox(combined: data), using: metadataKey(context))
+        } catch {
+            throw RepoCryptoError.integrityCheckFailed
+        }
+    }
+
+    private func metadataKey(_ context: String) -> SymmetricKey {
+        HKDF<SHA256>.deriveKey(inputKeyMaterial: masterEncKey,
+                               info: Data("meta:\(context)".utf8), outputByteCount: 32)
+    }
 }

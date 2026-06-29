@@ -13,6 +13,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct JobSettingsView: View {
     @Environment(AppModel.self) private var model
@@ -27,6 +28,11 @@ struct JobSettingsView: View {
     @State private var keepValue: Int
     @State private var quotaGB: Double
     @State private var minFreeGB: Double
+    @State private var encryptionEnabled: Bool
+    @State private var password: String = ""
+    @State private var recoveryKey: String = ""
+    @State private var isWorking = false
+    @State private var errorMessage: String?
 
     private static let bytesPerGB: Double = 1_000_000_000
 
@@ -62,6 +68,7 @@ struct JobSettingsView: View {
         }
         _quotaGB = State(initialValue: Double(job.retention.maxTotalBytes) / Self.bytesPerGB)
         _minFreeGB = State(initialValue: Double(job.retention.minimumFreeBytes) / Self.bytesPerGB)
+        _encryptionEnabled = State(initialValue: job.encryptionEnabled)
     }
 
     var body: some View {
@@ -73,11 +80,21 @@ struct JobSettingsView: View {
                     whenSection
                     keepSection
                     storageSection
+                    encryptionSection
                 }
                 .padding(20)
             }
         }
-        .frame(width: 500, height: 540)
+        .frame(width: 500, height: 600)
+        .overlay { if isWorking { workingOverlay } }
+        .sheet(isPresented: Binding(get: { !recoveryKey.isEmpty },
+                                    set: { if !$0 { recoveryKey = ""; dismiss() } })) {
+            recoveryKeySheet(recoveryKey)
+        }
+        .alert("Encryption Error", isPresented: Binding(get: { errorMessage != nil },
+                                                        set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(errorMessage ?? "") }
     }
 
     // MARK: - Header
@@ -150,6 +167,33 @@ struct JobSettingsView: View {
         }
     }
 
+    private var encryptionSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            section("Encryption") {
+                row("Encrypt this backup") {
+                    Toggle("", isOn: $encryptionEnabled).labelsHidden()
+                }
+                if encryptionEnabled {
+                    rowDivider
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(job.encryptionEnabled ? "Password" : "Set a password")
+                            Text("Unlocks the encrypted repo").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        SecureField("password", text: $password)
+                            .textFieldStyle(.roundedBorder).frame(width: 160)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                }
+            }
+            Text(encryptionEnabled
+                 ? "Files are chunked, deduplicated, and encrypted (AES-256-GCM) into a repo. A recovery key is shown once when you first enable it — save it."
+                 : "Off: backups are stored as browsable plaintext snapshots.")
+                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
+        }
+    }
+
     // MARK: - Building blocks
 
     @ViewBuilder
@@ -210,7 +254,66 @@ struct JobSettingsView: View {
             minimumFreeBytes: Int64(max(0, minFreeGB) * Self.bytesPerGB),
             maxTotalBytes: Int64(max(0, quotaGB) * Self.bytesPerGB)
         )
+        updated.encryptionEnabled = encryptionEnabled
+
+        if encryptionEnabled {
+            // A password is required to create/verify the repo (unless it's already set and unchanged).
+            if password.isEmpty && !job.encryptionEnabled {
+                errorMessage = "Enter a password to enable encryption."
+                return
+            }
+            if !password.isEmpty {
+                isWorking = true
+                Task {
+                    do {
+                        let recovery = try await model.coordinator.enableEncryption(for: updated, password: password)
+                        isWorking = false
+                        model.coordinator.updateJob(updated)
+                        if let recovery { recoveryKey = recovery }   // newly created → show once
+                        else { dismiss() }
+                    } catch {
+                        isWorking = false
+                        errorMessage = String(describing: error)
+                    }
+                }
+                return
+            }
+        } else if job.encryptionEnabled {
+            KeychainStorage.removePassword(for: updated.id)
+        }
+
         model.coordinator.updateJob(updated)
         dismiss()
+    }
+
+    private var workingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.2).ignoresSafeArea()
+            ProgressView("Setting up encryption…")
+                .padding(20)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func recoveryKeySheet(_ key: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "key.fill").font(.largeTitle).foregroundStyle(Color.wpDesignYellow)
+            Text("Save Your Recovery Key").font(.title3.weight(.semibold))
+            Text("This is the ONLY way to recover this backup if you forget the password. It is shown once — store it somewhere safe.")
+                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Text(key)
+                .font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                .padding(12).frame(maxWidth: .infinity)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            HStack {
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(key, forType: .string)
+                }
+                Button("I've saved it — Done") { recoveryKey = ""; dismiss() }
+                    .buttonStyle(.borderedProminent).tint(Color.wpDesignYellow).foregroundStyle(.black)
+            }
+        }
+        .padding(30).frame(width: 440)
     }
 }

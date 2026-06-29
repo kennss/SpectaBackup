@@ -72,6 +72,24 @@ final class BackupCoordinator {
         if job.isEnabled, case .realtime = job.trigger { startWatcher(for: job) }
     }
 
+    /// Initialize (or verify) an encrypted job's repo and store its password in the Keychain. Returns
+    /// the recovery key when the repo was just created (show it ONCE), or nil if it already existed.
+    /// The heavy argon2 KDF / repo creation runs off the main actor.
+    func enableEncryption(for job: BackupJob, password: String) async throws -> String? {
+        let repoRoot = BackupRunner.jobRoot(for: job).appendingPathComponent("repo", isDirectory: true)
+        let pw = Data(password.utf8)
+        let recovery = try await Task.detached(priority: .userInitiated) { () -> String? in
+            let backend = try LocalBackend(root: repoRoot)
+            if await RepoManager.isInitialized(backend) {
+                _ = try await RepoManager.unlock(backend: backend, password: pw)   // verify password
+                return nil
+            }
+            return try await RepoManager.create(backend: backend, password: pw).recoveryKey
+        }.value
+        KeychainStorage.setPassword(password, for: job.id)
+        return recovery
+    }
+
     private func persist() {
         try? store.save(jobs)
     }
