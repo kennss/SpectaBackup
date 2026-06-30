@@ -3,7 +3,8 @@
 # @file        release.sh
 # @description Reproducible release pipeline for SpectArk: archive (Release) -> export with the
 #              Developer ID identity -> verify -> notarize + staple the app -> package as a DMG ->
-#              notarize + staple the DMG. No Xcode UI. Run from anywhere; it cd's to the repo root.
+#              notarize + staple the DMG -> generate the Sparkle appcast. No Xcode UI. Run from
+#              anywhere; it cd's to the repo root.
 #
 #              Usage:
 #                  ./scripts/release.sh                 # full pipeline (build + sign + notarize + dmg)
@@ -19,7 +20,7 @@
 # @author      Kennt Kim
 # @company     Calida Lab
 # @created     2026-06-30
-# @lastUpdated 2026-06-30
+# @lastUpdated 2026-07-01
 #
 set -euo pipefail
 
@@ -103,9 +104,30 @@ if [ "${NOTARIZE}" = "1" ]; then
   xcrun stapler validate "${DMG}"
   echo "==> Gatekeeper check"
   spctl -a -t open --context context:primary-signature -vv "${DMG}" 2>&1 || true
+
+  # Sparkle appcast: sign the FINAL (notarized + stapled) DMG with the EdDSA key in the login keychain
+  # and emit appcast.xml. Upload BOTH the DMG and appcast.xml to the v${VERSION} GitHub release;
+  # SUFeedURL (releases/latest/download/appcast.xml) then resolves to the newest release's appcast.
+  echo "==> Generating Sparkle appcast"
+  APPCAST_TOOL="$(find "${HOME}/Library/Developer/Xcode/DerivedData/SpectaBackup-"*/SourcePackages/artifacts -name generate_appcast 2>/dev/null | head -1)"
+  if [ -n "${APPCAST_TOOL}" ]; then
+    APPCAST_DIR="${BUILD_DIR}/appcast"
+    rm -rf "${APPCAST_DIR}"; mkdir -p "${APPCAST_DIR}"
+    cp "${DMG}" "${APPCAST_DIR}/"
+    "${APPCAST_TOOL}" --download-url-prefix "https://github.com/kennss/SpectArk/releases/download/v${VERSION}/" "${APPCAST_DIR}"
+    cp "${APPCAST_DIR}/appcast.xml" "${BUILD_DIR}/appcast.xml"
+    echo "==> appcast: ${BUILD_DIR}/appcast.xml"
+  else
+    echo "WARN: generate_appcast not found — build once (so SPM resolves Sparkle), then re-run."
+  fi
 else
-  echo "==> SKIP_NOTARIZE set — signed but NOT notarized"
+  echo "==> SKIP_NOTARIZE set — signed but NOT notarized (no appcast)"
 fi
 
 echo "==> Done: ${DMG}"
 ls -lh "${DMG}"
+if [ "${NOTARIZE}" = "1" ] && [ -f "${BUILD_DIR}/appcast.xml" ]; then
+  echo ""
+  echo "Publish (uploads BOTH the DMG and the appcast so auto-update sees it):"
+  echo "  gh release create v${VERSION} \"${DMG}\" \"${BUILD_DIR}/appcast.xml\" --repo kennss/SpectArk --title \"SpectArk ${VERSION}\" --notes \"...\""
+fi

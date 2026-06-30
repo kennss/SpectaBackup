@@ -6,7 +6,7 @@
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 //  Notes:
 //  - @Observable + @MainActor (Swift 6). UI reads `jobs` and `state(for:)`; heavy work is on `runner`.
@@ -180,8 +180,7 @@ final class BackupCoordinator {
     /// Free/total space per destination VOLUME, aggregated across jobs that target the same disk.
     /// Volumes that aren't mounted (e.g. a disconnected NAS) are skipped.
     func destinationUsages() -> [DestinationUsage] {
-        let keys: Set<URLResourceKey> = [.volumeURLKey, .volumeNameKey,
-                                         .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]
+        let keys: Set<URLResourceKey> = [.volumeURLKey, .volumeNameKey]
         var byVolume: [String: DestinationUsage] = [:]
         for job in jobs {
             guard let rv = try? job.destination.resourceValues(forKeys: keys),
@@ -190,11 +189,15 @@ final class BackupCoordinator {
             if byVolume[mount] != nil {
                 byVolume[mount]?.jobCount += 1
             } else {
+                // Free/total via statfs (Syscalls.volumeInfo) — the SAME source the detail pane uses,
+                // so the footer matches it. NOT volumeAvailableCapacityForImportantUsage, which returns
+                // 0 on SMB/NAS network volumes (showed "Zero KB free" with a full red bar).
+                guard let info = try? Syscalls.volumeInfo(at: job.destination.path) else { continue }
                 byVolume[mount] = DestinationUsage(
                     id: mount,
                     name: rv.volumeName ?? volumeURL.lastPathComponent,
-                    freeBytes: Int64(rv.volumeAvailableCapacityForImportantUsage ?? 0),
-                    totalBytes: Int64(rv.volumeTotalCapacity ?? 0),
+                    freeBytes: info.freeBytes,
+                    totalBytes: info.totalBytes,
                     jobCount: 1)
             }
         }

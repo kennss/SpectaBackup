@@ -1,18 +1,19 @@
 //
 //  @file        BackupRunner.swift
 //  @description Actor that executes a backup pass off the main actor and serializes file I/O. It
-//               resolves the job root, garbage-collects orphaned `.inprogress-*` trees from prior
-//               crashes, probes the destination, opens the catalog, and drives the SnapshotEngine.
+//               resolves the job root, probes the destination, opens the catalog, and drives the
+//               SnapshotEngine.
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 //  Notes:
 //  - Being an actor, passes run serialized; the heavy copy loop is synchronous so it holds the actor
 //    for the duration (effectively one pass at a time — correct for avoiding concurrent dest writes).
-//  - GC runs before every pass: a `.inprogress-*` dir can only exist if a previous pass crashed, and
-//    is never a valid snapshot (no COMPLETE marker, no catalog `complete` row).
+//  - Orphaned `.inprogress-*` trees from an interrupted pass are NOT garbage-collected here: the engine
+//    adopts the newest one to resume (copy only the remainder). A partial is never a valid snapshot
+//    (no COMPLETE marker, no catalog `complete` row), so adopting it is safe.
 //
 
 import Foundation
@@ -52,7 +53,6 @@ actor BackupRunner {
         let jobRoot = Self.jobRoot(for: job)
         let snapshotsDir = jobRoot.appendingPathComponent("snapshots", isDirectory: true)
         try fm.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
-        garbageCollectInProgress(in: snapshotsDir)
 
         let catalog = try CatalogStore(path: jobRoot.appendingPathComponent("catalog.sqlite").path)
         let engine = SnapshotEngine(catalog: catalog)
@@ -119,7 +119,6 @@ actor BackupRunner {
         let jobRoot = attachment.mountPoint.appendingPathComponent("SpectaBackup/\(job.id.uuidString)", isDirectory: true)
         let snapshotsDir = jobRoot.appendingPathComponent("snapshots", isDirectory: true)
         try fm.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
-        garbageCollectInProgress(in: snapshotsDir)
 
         let innerCaps = try DestinationProbe.probe(destination: attachment.mountPoint)   // APFS → clone
         let catalog = try CatalogStore(path: jobRoot.appendingPathComponent("catalog.sqlite").path)
@@ -294,12 +293,5 @@ actor BackupRunner {
 
     static func jobRoot(for job: BackupJob) -> URL {
         job.destination.appendingPathComponent("SpectaBackup/\(job.id.uuidString)", isDirectory: true)
-    }
-
-    private func garbageCollectInProgress(in snapshotsDir: URL) {
-        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: snapshotsDir.path) else { return }
-        for name in entries where name.hasPrefix(".inprogress-") {
-            try? FileManager.default.removeItem(at: snapshotsDir.appendingPathComponent(name))
-        }
     }
 }

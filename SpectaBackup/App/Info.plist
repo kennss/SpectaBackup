@@ -26,5 +26,11 @@
 	<string>NSApplication</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Calida Lab. All rights reserved.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/kennss/SpectArk/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>mhjyc+aHQkMYFZInv/15en9GVk/9eBEQN10QLOFwWJU=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

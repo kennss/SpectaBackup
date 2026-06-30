@@ -7,7 +7,7 @@
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-30
+//  @lastUpdated 2026-07-01
 //
 
 import SwiftUI
@@ -56,6 +56,7 @@ struct DashboardView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { fdaGranted = FullDiskAccess.isGranted }
         }
+        .background(WindowSizeFit())   // shrink an oversized restored window to fit the screen on launch
         .sheet(isPresented: $showGlobalSettings) { GlobalSettingsView().environment(model) }
         .sheet(isPresented: $showNewBackup) {
             NewBackupView(onCreated: { selectedJobID = $0 }).environment(model)

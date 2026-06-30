@@ -4,10 +4,12 @@
 //               COMPLETE snapshot tree with clonefile (CoW), then apply the source diff — fresh-copy
 //               changed/new files, hardlink intra-source duplicates, and unlink deletions. Publishes
 //               atomically via .inprogress → fsync → rename → COMPLETE marker → catalog commit.
+//               An interrupted pass leaves its `.inprogress-*` partial on disk; the next pass adopts it
+//               and resumes (copies only the remainder) instead of restarting from scratch.
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 //  Safety invariants (from the engine design review):
 //  - Clone files are independent inodes (CoW), so overwriting a changed file in the new snapshot can
@@ -75,8 +77,15 @@ struct SnapshotEngine: Sendable {
         let inProgressDir = snapshotsDir.appendingPathComponent(".inprogress-\(seqId)", isDirectory: true)
 
         do {
-            // 1) Materialize the base tree (CoW clone) or start fresh for the first snapshot.
-            if let baseDir, fm.fileExists(atPath: baseDir.path) {
+            // 1) Resume an interrupted pass if a partial tree from this job survives; otherwise
+            //    materialize the base tree (CoW clone) or start fresh for the first snapshot. Resuming
+            //    works because syncSource's isChanged() skips files already present with a matching
+            //    size+mtime, so only the not-yet-copied remainder is processed.
+            if await adoptOrphanPartial(in: snapshotsDir, as: inProgressDir) {
+                // Adopted a prior partial: it has no COMPLETE marker (never a valid snapshot) and, since
+                // no new snapshot can be published while a pass is interrupted, it shares the current
+                // base. Resume into it — syncSource fills in the rest.
+            } else if let baseDir, fm.fileExists(atPath: baseDir.path) {
                 // Materialize the base tree per strategy: APFS CoW clone, or a hardlink tree for
                 // destinations with persistent hardlinks but no clonefile (e.g. some NAS shares).
                 if caps.strategy == .hardlinkTree {
@@ -236,6 +245,42 @@ struct SnapshotEngine: Sendable {
                 try Syscalls.hardlink(from: entry.url.path, to: dst)
             }
         }
+    }
+
+    // MARK: - Resume (adopt an interrupted pass's partial tree)
+
+    /// Adopt the newest orphaned `.inprogress-*` partial (left by a prior interrupted pass of this job)
+    /// as `target`, so the copy loop resumes instead of restarting from scratch. Older partials and all
+    /// the stale `inProgress` catalog rows are dropped. Returns false when there is nothing to resume.
+    ///
+    /// Safe: a partial never carries the COMPLETE marker (so it is never a valid snapshot), and no new
+    /// snapshot can be published while a pass is interrupted, so the partial's base matches the current
+    /// one. The most common interruptions (app quit, crash, destination unplugged) leave the partial on
+    /// disk for exactly this path to pick up.
+    private func adoptOrphanPartial(in snapshotsDir: URL, as target: URL) async -> Bool {
+        let fm = FileManager.default
+        let names = (try? fm.contentsOfDirectory(atPath: snapshotsDir.path)) ?? []
+        let orphans = names.compactMap { name -> (url: URL, seq: Int)? in
+            guard name.hasPrefix(".inprogress-"),
+                  let seq = Int(name.dropFirst(".inprogress-".count)) else { return nil }
+            return (snapshotsDir.appendingPathComponent(name, isDirectory: true), seq)
+        }.sorted { $0.seq < $1.seq }
+        guard let newest = orphans.last else { return false }
+
+        // Only the most recent partial is worth resuming; discard older ones and their catalog rows.
+        for stale in orphans.dropLast() {
+            try? fm.removeItem(at: stale.url)
+            try? await catalog.deleteSnapshot(seqId: Int64(stale.seq))
+        }
+        try? fm.removeItem(at: newest.url.appendingPathComponent(Self.completeMarker))   // defensive
+        guard (try? fm.moveItem(at: newest.url, to: target)) != nil else {
+            try? fm.removeItem(at: newest.url)
+            try? await catalog.deleteSnapshot(seqId: Int64(newest.seq))
+            return false
+        }
+        // The adopted partial's old inProgress row is superseded by this pass's new seqId row.
+        try? await catalog.deleteSnapshot(seqId: Int64(newest.seq))
+        return true
     }
 
     // MARK: - Helpers

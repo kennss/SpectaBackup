@@ -3,11 +3,11 @@
 //  @description Engine safety tests on the boot APFS volume's temp dir: clone immutability (a prior
 //               snapshot is never mutated by a later one), incremental change detection, deletion
 //               reflection with history kept, empty-snapshot skipping, intra-source hardlink
-//               preservation, and metadata/symlink round-trip.
+//               preservation, metadata/symlink round-trip, and resume of an interrupted pass.
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 
 import XCTest
@@ -187,6 +187,50 @@ final class SnapshotEngineTests: XCTestCase {
         XCTAssertEqual(lstat(snapshotFile(f.jobRoot, s1, f.source, "a.txt").path, &a1), 0)
         XCTAssertEqual(lstat(snapshotFile(f.jobRoot, s2, f.source, "a.txt").path, &a2), 0)
         XCTAssertNotEqual(a1.st_ino, a2.st_ino, "changed file must be a fresh copy, not a mutated shared inode")
+    }
+
+    func testResumesInterruptedPassFromPartial() async throws {
+        let f = try makeFixture()
+        for (name, body) in [("a.txt", "alpha"), ("b.txt", "bravo"), ("c.txt", "charlie")] {
+            try body.write(to: f.source.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+
+        let fm = FileManager.default
+        let snapshotsDir = f.jobRoot.appendingPathComponent("snapshots", isDirectory: true)
+        try fm.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
+
+        // Simulate an interrupted pass: a begun-but-unfinished snapshot whose `.inprogress-<seq>` partial
+        // already holds a correct copy of a.txt (matching size+mtime, as a real pass would have left),
+        // but not b.txt / c.txt.
+        let seq = try await f.engine.catalog.beginSnapshot(jobID: f.job.id, timestamp: Date(), sourceSnapshotID: nil)
+        let partialSrc = snapshotsDir
+            .appendingPathComponent(".inprogress-\(seq)/\(f.source.lastPathComponent)", isDirectory: true)
+        try fm.createDirectory(at: partialSrc, withIntermediateDirectories: true)
+        try Syscalls.copyItem(at: f.source.appendingPathComponent("a.txt").path,
+                              to: partialSrc.appendingPathComponent("a.txt").path)
+        var before = Darwin.stat()
+        XCTAssertEqual(lstat(partialSrc.appendingPathComponent("a.txt").path, &before), 0)
+
+        // Next pass must ADOPT the partial and copy only the remainder (b.txt, c.txt).
+        let s = try await XCTUnwrapAsync(f.engine.runPass(job: f.job, jobRoot: f.jobRoot, caps: cloneCaps()) { _ in })
+
+        // All three files present and correct in the published snapshot.
+        XCTAssertEqual(try String(contentsOf: snapshotFile(f.jobRoot, s, f.source, "a.txt"), encoding: .utf8), "alpha")
+        XCTAssertEqual(try String(contentsOf: snapshotFile(f.jobRoot, s, f.source, "b.txt"), encoding: .utf8), "bravo")
+        XCTAssertEqual(try String(contentsOf: snapshotFile(f.jobRoot, s, f.source, "c.txt"), encoding: .utf8), "charlie")
+
+        // a.txt was RESUMED (same inode as the partial), not re-copied from scratch.
+        var after = Darwin.stat()
+        XCTAssertEqual(lstat(snapshotFile(f.jobRoot, s, f.source, "a.txt").path, &after), 0)
+        XCTAssertEqual(before.st_ino, after.st_ino, "already-copied file should be reused, not re-copied")
+
+        // No leftover partials, and exactly one complete snapshot (stale inProgress row cleaned up).
+        let leftovers = (try? fm.contentsOfDirectory(atPath: snapshotsDir.path))?
+            .filter { $0.hasPrefix(".inprogress-") } ?? []
+        XCTAssertTrue(leftovers.isEmpty, "adopted partial should be published, none left behind")
+        let rows = try await f.engine.catalog.snapshots(jobID: f.job.id)
+        XCTAssertEqual(rows.filter { $0.status == .complete }.count, 1)
+        XCTAssertTrue(rows.allSatisfy { $0.status != .inProgress }, "stale inProgress row should be cleaned up")
     }
 
     // MARK: - Async helper

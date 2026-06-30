@@ -36,10 +36,28 @@ struct JobDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle(job.name)
+        .toolbar { ToolbarItem(placement: .primaryAction) { runButton } }
         // Re-check after history changes AND when a migration ends, so the prompt clears itself.
         .task(id: "\(state.history.count)-\(state.isMigrating)") {
             plaintextCount = job.encryptionEnabled ? await coordinator.plaintextSnapshotCount(job.id) : 0
         }
+    }
+
+    /// Run a backup now. Lives in the detail toolbar so it's reachable without the sidebar ⋯ menu.
+    /// While a pass is running it shows progress and is disabled (the runner refuses a second pass).
+    @ViewBuilder
+    private var runButton: some View {
+        Button {
+            coordinator.runNow(job.id)
+        } label: {
+            if state.isRunning {
+                Label("Backing up…", systemImage: "arrow.clockwise")
+            } else {
+                Label("Back Up Now", systemImage: "arrow.clockwise")
+            }
+        }
+        .disabled(state.isRunning || state.isMigrating)
+        .help("Run a backup now")
     }
 
     // MARK: - Source → Destination header

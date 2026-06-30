@@ -6,7 +6,7 @@
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-30
+//  @lastUpdated 2026-07-01
 //
 //  Notes:
 //  - Scenes: a single `Window` (id "dashboard") plus a `MenuBarExtra`. Not WindowGroup — backup
@@ -30,6 +30,13 @@ struct SpectaBackupApp: App {
                 .preferredColorScheme(colorScheme)
         }
         .defaultSize(width: 980, height: 640)
+        .commands {
+            // Standard "Check for Updates…" under the app menu (Sparkle).
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { UpdaterController.shared.checkForUpdates() }
+                    .disabled(!UpdaterController.shared.canCheck)
+            }
+        }
 
         // MARK: - Menu-bar dropdown (status + quick controls)
         MenuBarExtra("SpectArk", systemImage: "externaldrive.fill") {

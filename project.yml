@@ -20,11 +20,16 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.1.0"
+    CURRENT_PROJECT_VERSION: "2"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: "8677QL77VJ"
     ENABLE_HARDENED_RUNTIME: YES
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
 
 targets:
   SpectaBackup:
@@ -35,9 +40,16 @@ targets:
       - path: SpectaBackup
     dependencies:
       - sdk: libsqlite3.tbd
+      - package: Sparkle
+    scheme:
+      testTargets:
+        - SpectaBackupTests   # so `xcodebuild test -scheme SpectaBackup` always has a test action
     settings:
       base:
         PRODUCT_NAME: SpectArk
+        # Keep the Swift module name as the legacy internal name (the rename is display-only): source
+        # and tests use `import SpectaBackup`, and it's decoupled from the user-facing PRODUCT_NAME.
+        PRODUCT_MODULE_NAME: SpectaBackup
         PRODUCT_BUNDLE_IDENTIFIER: ai.calidalab.spectabackup
         INFOPLIST_FILE: SpectaBackup/App/Info.plist
         GENERATE_INFOPLIST_FILE: NO
@@ -65,3 +77,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.calidalab.spectabackup.tests
         GENERATE_INFOPLIST_FILE: YES
+        # The host app's PRODUCT_NAME is SpectArk (target is still named SpectaBackup), so point the
+        # test host at the real product, not the target-name-derived SpectaBackup.app.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SpectArk.app/Contents/MacOS/SpectArk"
+        BUNDLE_LOADER: "$(TEST_HOST)"
