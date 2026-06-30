@@ -22,9 +22,15 @@ it works wasn't what I needed:
 - **And I didn't want to sacrifice a whole drive to it.** Dedicating an entire disk to
   backups felt wasteful. I wanted to choose exactly where snapshots live and pair any
   source folder with any destination, freely.
+- **The backup shouldn't become the leak.** A backup drive or NAS can be lost or
+  stolen — and a plaintext copy hands over every file on it. So any backup can be
+  encrypted end-to-end, unlocked only by your password (with a one-time recovery key as
+  a fallback). It's optional and off by default: when I don't need it, snapshots stay
+  browsable plaintext in Finder.
 
-SpectArk is the result: realtime, folder-scoped, versioned backup that protects the
-files you actually care about — and lets you decide where they go.
+SpectArk is the result: realtime, folder-scoped, versioned backup — optionally
+encrypted — that protects the files you actually care about, and lets you decide where
+they go.
 
 ## Features
 
