@@ -1,12 +1,12 @@
 //
 //  @file        MenuBarView.swift
-//  @description Menu-bar dropdown: overall status, a card per job (live throughput / last backup +
-//               a destination free-space mini gauge), and quick actions. Matches the dashboard's
-//               card design language.
+//  @description Menu-bar dropdown: overall status, a card per job (live throughput / last backup), a
+//               per-volume destination capacity list (every backup disk at a glance), and quick
+//               actions. Matches the dashboard's card design language.
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 
 import SwiftUI
@@ -28,6 +28,16 @@ struct MenuBarView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(coordinator.jobs) { jobCard($0) }
+                }
+            }
+
+            let usages = coordinator.destinationUsages()
+            if !usages.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Destinations")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    ForEach(usages) { destinationRow($0) }
                 }
             }
 
@@ -72,29 +82,28 @@ struct MenuBarView: View {
             } else {
                 Text("Never backed up").font(.caption).foregroundStyle(.secondary)
             }
-            if let free = state.destinationFreeBytes, let total = state.destinationTotalBytes, total > 0 {
-                storageMini(free: free, total: total)
-            }
         }
         .padding(10)
         .cardSurface()
     }
 
-    private func storageMini(free: Int64, total: Int64) -> some View {
-        let used = 1 - Double(free) / Double(total)
-        return VStack(spacing: 4) {
+    private func destinationRow(_ usage: DestinationUsage) -> some View {
+        VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: "externaldrive.fill").font(.caption2)
-                Text("\(byteString(free)) free").font(.caption2)
+                Text(usage.name).font(.caption2.weight(.medium))
+                if usage.jobCount > 1 {
+                    Text("· \(usage.jobCount) backups").font(.caption2).foregroundStyle(.secondary)
+                }
                 Spacer()
-                Text("\(Int((used * 100).rounded()))% used").font(.caption2)
+                Text("\(byteString(usage.freeBytes)) free of \(byteString(usage.totalBytes))")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
-            .foregroundStyle(.secondary)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary)
-                    Capsule().fill(Color.wpDesignYellow)
-                        .frame(width: max(0, min(1, used)) * geo.size.width)
+                    Capsule().fill(usage.usedFraction > 0.9 ? Color.wpRed : Color.wpDesignYellow)
+                        .frame(width: max(0, min(1, usage.usedFraction)) * geo.size.width)
                 }
             }
             .frame(height: 4)

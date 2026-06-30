@@ -41,20 +41,8 @@ struct DashboardView: View {
                     Button(action: addJob) { Label("Add Backup", systemImage: "plus") }
                 }
             }
-            // Bottom-left: global settings (defaults for new jobs).
-            .safeAreaInset(edge: .bottom) {
-                HStack {
-                    Button { showGlobalSettings = true } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Settings — defaults for new backups")
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(.bar)
-            }
+            // Bottom-left: destination disk capacity + global settings (defaults for new jobs).
+            .safeAreaInset(edge: .bottom) { sidebarFooter }
         } detail: {
             if let id = selectedJobID, let job = coordinator.jobs.first(where: { $0.id == id }) {
                 JobDetailView(job: job)
@@ -87,6 +75,31 @@ struct DashboardView: View {
         } message: { job in
             Text("“\(job.name)” will stop being backed up. Also delete its snapshots on \(job.destination.lastPathComponent) to free the space, or keep them on disk.")
         }
+    }
+
+    // MARK: - Sidebar footer (destination capacity + settings)
+
+    private var sidebarFooter: some View {
+        let usages = coordinator.destinationUsages()
+        return VStack(spacing: 8) {
+            if !usages.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(usages) { DestinationUsageRow(usage: $0) }
+                }
+                Divider()
+            }
+            HStack {
+                Button { showGlobalSettings = true } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .buttonStyle(.borderless)
+                .help("Settings — defaults for new backups")
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     // MARK: - Empty state
@@ -198,5 +211,37 @@ private struct JobRow: View {
             .fixedSize()
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// Sidebar footer row: one backup destination volume's name + free-space bar.
+private struct DestinationUsageRow: View {
+    let usage: DestinationUsage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                Image(systemName: "externaldrive.fill")
+                    .font(.caption2).foregroundStyle(Color.wpDesignYellow)
+                Text(usage.name).font(.caption).lineLimit(1)
+                if usage.jobCount > 1 {
+                    Text("· \(usage.jobCount)").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(byteString(usage.freeBytes)) free").font(.caption2).foregroundStyle(.secondary)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.quaternary)
+                    Capsule().fill(usage.usedFraction > 0.9 ? Color.wpRed : Color.wpDesignYellow)
+                        .frame(width: max(0, min(1, usage.usedFraction)) * geo.size.width)
+                }
+            }
+            .frame(height: 4)
+        }
+    }
+
+    private func byteString(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }

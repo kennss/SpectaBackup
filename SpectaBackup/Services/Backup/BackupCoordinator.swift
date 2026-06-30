@@ -171,6 +171,30 @@ final class BackupCoordinator {
         for job in jobs { updateFreeSpace(job.id) }
     }
 
+    /// Free/total space per destination VOLUME, aggregated across jobs that target the same disk.
+    /// Volumes that aren't mounted (e.g. a disconnected NAS) are skipped.
+    func destinationUsages() -> [DestinationUsage] {
+        let keys: Set<URLResourceKey> = [.volumeURLKey, .volumeNameKey,
+                                         .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]
+        var byVolume: [String: DestinationUsage] = [:]
+        for job in jobs {
+            guard let rv = try? job.destination.resourceValues(forKeys: keys),
+                  let volumeURL = rv.volume else { continue }
+            let mount = volumeURL.path
+            if byVolume[mount] != nil {
+                byVolume[mount]?.jobCount += 1
+            } else {
+                byVolume[mount] = DestinationUsage(
+                    id: mount,
+                    name: rv.volumeName ?? volumeURL.lastPathComponent,
+                    freeBytes: Int64(rv.volumeAvailableCapacityForImportantUsage ?? 0),
+                    totalBytes: Int64(rv.volumeTotalCapacity ?? 0),
+                    jobCount: 1)
+            }
+        }
+        return byVolume.values.sorted { $0.name < $1.name }
+    }
+
     private func loadHistory(for job: BackupJob) {
         let jobID = job.id
         Task {
