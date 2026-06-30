@@ -146,8 +146,13 @@ actor BackupRunner {
         }
     }
 
-    /// Remove a snapshot directory, clearing BSD immutable flags first so deletion can't be blocked.
+    /// Remove a snapshot directory. Fast path: just delete it — most backups have no BSD immutable
+    /// flags, so we avoid walking every file to clear uchg first (that walk is brutally slow on huge
+    /// trees over an external/NAS volume and was leaving Remove&Delete unable to free the disk). Only
+    /// if the delete is blocked (e.g. uchg flags) do we clear flags and retry.
     private func deleteSnapshotTree(_ dir: URL) {
+        guard FileManager.default.fileExists(atPath: dir.path) else { return }
+        if (try? FileManager.default.removeItem(at: dir)) != nil { return }
         try? Syscalls.clearUserFlags(dir.path)
         try? FileWalker.walk(root: dir, exclusions: BackupExclusions()) { entry in
             try? Syscalls.clearUserFlags(entry.url.path)
@@ -167,6 +172,18 @@ actor BackupRunner {
         guard FileManager.default.fileExists(atPath: catalogPath) else { return [] }
         let catalog = try CatalogStore(path: catalogPath)
         return try await catalog.snapshots(jobID: job.id)
+    }
+
+    /// Remove orphaned `inProgress` catalog rows left by crashed/killed passes, so they don't linger
+    /// as "0 files" snapshots. Called at launch.
+    func cleanupIncompleteSnapshots(for job: BackupJob) async {
+        let catalogPath = Self.jobRoot(for: job).appendingPathComponent("catalog.sqlite").path
+        guard FileManager.default.fileExists(atPath: catalogPath),
+              let catalog = try? CatalogStore(path: catalogPath),
+              let snaps = try? await catalog.snapshots(jobID: job.id) else { return }
+        for snap in snaps where snap.status == .inProgress {
+            try? await catalog.deleteSnapshot(seqId: snap.seqId)
+        }
     }
 
     /// Free space at the destination, for the menu-bar gauge.

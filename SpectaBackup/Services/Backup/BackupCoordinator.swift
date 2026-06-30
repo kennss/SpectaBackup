@@ -163,7 +163,13 @@ final class BackupCoordinator {
 
     /// Load snapshot history for all jobs (call at launch).
     func refreshAllHistory() {
-        for job in jobs { loadHistory(for: job) }
+        for job in jobs {
+            let j = job
+            Task {
+                await runner.cleanupIncompleteSnapshots(for: j)   // drop orphaned 0-file inProgress rows
+                loadHistory(for: j)
+            }
+        }
     }
 
     /// Refresh destination free space for all jobs (e.g. when the menu bar opens).
@@ -238,6 +244,13 @@ final class BackupCoordinator {
         return await runner.plaintextSnapshotCount(for: job)
     }
 
+    /// Dismiss the post-migration success note.
+    func clearMigrationMessage(_ jobID: UUID) {
+        var s = state(for: jobID)
+        s.migrationMessage = nil
+        states[jobID] = s
+    }
+
     /// Migrate a job's plaintext snapshots into its encrypted repo (off-main), surfacing progress and
     /// keeping the plaintext intact if anything fails.
     func migrateToEncrypted(_ jobID: UUID) {
@@ -256,9 +269,11 @@ final class BackupCoordinator {
             }
         }
         Task {
+            var succeeded = false
             do {
                 try await runner.migrateToEncrypted(job: job, progress: progress)
                 loadHistory(for: job)
+                succeeded = true
             } catch {
                 var s = state(for: jobID)
                 s.lastError = "Migration stopped — your plaintext backups are safe. " + BackupErrorMessage.describe(error)
@@ -267,6 +282,7 @@ final class BackupCoordinator {
             var s = state(for: jobID)
             s.isMigrating = false
             s.migrationProgress = nil
+            if succeeded { s.migrationMessage = "Encryption complete — plaintext snapshots converted and removed." }
             states[jobID] = s
             updateFreeSpace(jobID)
         }

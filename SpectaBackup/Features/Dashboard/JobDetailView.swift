@@ -25,6 +25,7 @@ struct JobDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 sourceDestinationHeader
                 if state.isMigrating { migrationBanner }
+                else if let msg = state.migrationMessage { migrationDoneBanner(msg) }
                 else if job.encryptionEnabled, plaintextCount > 0 { migrationPrompt }
                 if let error = state.lastError { errorBanner(error) }
                 statusCards
@@ -35,7 +36,8 @@ struct JobDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle(job.name)
-        .task(id: state.history.count) {
+        // Re-check after history changes AND when a migration ends, so the prompt clears itself.
+        .task(id: "\(state.history.count)-\(state.isMigrating)") {
             plaintextCount = job.encryptionEnabled ? await coordinator.plaintextSnapshotCount(job.id) : 0
         }
     }
@@ -166,6 +168,20 @@ struct JobDetailView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.wpDesignYellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func migrationDoneBanner(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.title3).foregroundStyle(.green)
+            Text(message).font(.callout.weight(.medium))
+            Spacer()
+            Button("Dismiss") { coordinator.clearMigrationMessage(job.id) }
+                .controlSize(.small)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var migrationBanner: some View {

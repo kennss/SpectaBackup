@@ -171,7 +171,15 @@ private struct JobRow: View {
                 .fill(state.isRunning ? Color.wpDesignYellow : Color.secondary.opacity(0.4))
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 2) {
-                Text(job.name).font(.body)
+                HStack(spacing: 5) {
+                    Text(job.name).font(.body)
+                    if showsLock {
+                        Image(systemName: "lock.fill")
+                            .font(.caption2)
+                            .foregroundStyle(Color.wpDesignYellow)
+                            .help("Encrypted — no plaintext copies remain")
+                    }
+                }
                 Text(job.destination.path)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -200,6 +208,15 @@ private struct JobRow: View {
             .fixedSize()
         }
         .padding(.vertical, 2)
+    }
+
+    /// Lock only when encryption is ON and NO plaintext snapshots remain (fully encrypted). A job with
+    /// encryption enabled but plaintext still to migrate shows no lock — the migrate banner covers it.
+    private var showsLock: Bool {
+        guard job.encryptionEnabled, !state.history.isEmpty else { return false }
+        return !state.history.contains {
+            $0.status == .complete && !$0.dirName.isEmpty && !$0.dirName.hasPrefix("enc-")
+        }
     }
 }
 

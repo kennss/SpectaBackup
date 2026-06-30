@@ -26,6 +26,8 @@ struct JobRuntimeState: Sendable {
     var isMigrating: Bool = false
     /// Migration progress; nil when not migrating.
     var migrationProgress: MigrationProgress?
+    /// A short success note shown right after a migration finishes (cleared on the next action).
+    var migrationMessage: String?
 }
 
 struct MigrationProgress: Sendable {
