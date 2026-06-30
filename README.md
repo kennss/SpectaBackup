@@ -1,8 +1,22 @@
 # SpectArk
 
+[![Release](https://img.shields.io/github/v/release/kennss/SpectArk?color=2b9348)](https://github.com/kennss/SpectArk/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/kennss/SpectArk/total?color=2b9348)](https://github.com/kennss/SpectArk/releases)
+[![License: MIT](https://img.shields.io/github/license/kennss/SpectArk)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20·%20Universal-111)
+
 ![SpectArk](docs/hero.png)
 
 A native macOS incremental backup app (Calida Lab / Specta product family).
+
+## Download
+
+**[⬇ Download the latest DMG](https://github.com/kennss/SpectArk/releases/latest)** — open it
+and drag **SpectArk** to Applications. Signed with a Developer ID and notarized by Apple;
+universal (Apple Silicon + Intel), macOS 14+.
+
+See the [Releases page](https://github.com/kennss/SpectArk/releases) for release notes and
+previous versions.
 
 ## Why SpectArk?
 
@@ -75,3 +89,7 @@ APFS source snapshots (consistent reads), `clonefile`/`copyfile`, atomic
 `rename` publish with a `COMPLETE` marker, and a SQLite catalog with
 `F_FULLFSYNC` durability. See [`docs/ENCRYPTION_DESIGN.md`](docs/ENCRYPTION_DESIGN.md)
 for the encrypted-repo design.
+
+## License
+
+MIT © 2026 Kennt Kim (Calida Lab) — see [LICENSE](LICENSE).
