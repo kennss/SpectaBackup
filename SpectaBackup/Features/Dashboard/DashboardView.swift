@@ -1,6 +1,6 @@
 //
 //  @file        DashboardView.swift
-//  @description Dashboard window: a sidebar list of backup jobs plus a detail pane. Add a job with the
+//  @description Dashboard window: a sidebar (brand lockup header + backup job list) plus a detail pane. Add a job with the
 //               toolbar +; per-job actions live in a ⋯ menu on each row (Back Up Now / Restore /
 //               Settings / Remove). The sidebar bottom-left opens GLOBAL settings (defaults for new
 //               jobs). The empty state shows the wordmark and a Full Disk Access card when needed.
@@ -42,6 +42,8 @@ struct DashboardView: View {
                     Button { showNewBackup = true } label: { Label("Add Backup", systemImage: "plus") }
                 }
             }
+            // Top-left: app icon + wordmark lockup (brand header).
+            .safeAreaInset(edge: .top) { sidebarHeader }
             // Bottom-left: destination disk capacity + global settings (defaults for new jobs).
             .safeAreaInset(edge: .bottom) { sidebarFooter }
         } detail: {
@@ -79,6 +81,22 @@ struct DashboardView: View {
         } message: { job in
             Text("“\(job.name)” will stop being backed up. Also delete its snapshots on \(job.destination.lastPathComponent) to free the space, or keep them on disk.")
         }
+    }
+
+    // MARK: - Sidebar header (brand lockup)
+
+    private var sidebarHeader: some View {
+        HStack {
+            Image("Lockup")
+                .resizable()
+                .scaledToFit()
+                .frame(height: 30)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(.bar)
     }
 
     // MARK: - Sidebar footer (destination capacity + settings)

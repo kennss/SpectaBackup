@@ -109,7 +109,9 @@ private struct BackupDefaultsPane: View {
             } header: {
                 Text("When to back up")
             } footer: {
-                Text("New backups start with this trigger; you can still change it per backup.")
+                Text(triggerBinding.wrappedValue
+                     ? "Realtime: SpectArk watches the folder and snapshots automatically whenever files change — not on a timer. New backups start with this trigger; you can change it per backup."
+                     : "Scheduled: snapshots run automatically on the interval you set, in the background. New backups start with this trigger; you can change it per backup.")
             }
 
             Section("Keep snapshots") {

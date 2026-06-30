@@ -1,12 +1,12 @@
 //
 //  @file        SpectaBackupApp.swift
-//  @description SwiftUI app entry point for SpectaBackup. Declares the dashboard Window and the
+//  @description SwiftUI app entry point for SpectArk. Declares the dashboard Window and the
 //               menu-bar dropdown (MenuBarExtra, .window style). The shared AppModel is created
 //               here and injected into both scenes.
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 //  Notes:
 //  - Scenes: a single `Window` (id "dashboard") plus a `MenuBarExtra`. Not WindowGroup — backup
@@ -24,7 +24,7 @@ struct SpectaBackupApp: App {
 
     var body: some Scene {
         // MARK: - Dashboard window (main surface)
-        Window("SpectaBackup", id: AppModel.dashboardWindowID) {
+        Window("SpectArk", id: AppModel.dashboardWindowID) {
             DashboardView()
                 .environment(model)
                 .preferredColorScheme(colorScheme)
@@ -32,7 +32,7 @@ struct SpectaBackupApp: App {
         .defaultSize(width: 980, height: 640)
 
         // MARK: - Menu-bar dropdown (status + quick controls)
-        MenuBarExtra("SpectaBackup", systemImage: "externaldrive.fill") {
+        MenuBarExtra("SpectArk", systemImage: "externaldrive.fill") {
             MenuBarView()
                 .environment(model)
         }

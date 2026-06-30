@@ -1,10 +1,12 @@
 # @file        project.yml
-# @description XcodeGen spec for SpectaBackup — a non-sandboxed Developer ID macOS backup app.
-#              Generates SpectaBackup.xcodeproj. Run `xcodegen generate` after editing.
+# @description XcodeGen spec for SpectArk — a non-sandboxed Developer ID macOS backup app. Builds the
+#              app as SpectArk (PRODUCT_NAME); the Xcode project/scheme keep the legacy SpectaBackup
+#              name and the bundle id stays ai.calidalab.spectabackup so existing backups/Keychain/FDA
+#              keep working. Generates SpectaBackup.xcodeproj. Run `xcodegen generate` after editing.
 # @author      Kennt Kim
 # @company     Calida Lab
 # @created     2026-06-29
-# @lastUpdated 2026-06-29
+# @lastUpdated 2026-06-30
 
 name: SpectaBackup
 options:
@@ -35,7 +37,7 @@ targets:
       - sdk: libsqlite3.tbd
     settings:
       base:
-        PRODUCT_NAME: SpectaBackup
+        PRODUCT_NAME: SpectArk
         PRODUCT_BUNDLE_IDENTIFIER: ai.calidalab.spectabackup
         INFOPLIST_FILE: SpectaBackup/App/Info.plist
         GENERATE_INFOPLIST_FILE: NO

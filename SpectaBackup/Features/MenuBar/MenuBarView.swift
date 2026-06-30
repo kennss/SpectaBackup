@@ -44,7 +44,7 @@ struct MenuBarView: View {
             Divider()
             VStack(spacing: 2) {
                 menuButton("Open Dashboard…", icon: "macwindow") { openWindow(id: AppModel.dashboardWindowID) }
-                menuButton("Quit SpectaBackup", icon: "power") { NSApplication.shared.terminate(nil) }
+                menuButton("Quit SpectArk", icon: "power") { NSApplication.shared.terminate(nil) }
             }
         }
         .padding(14)
@@ -57,7 +57,7 @@ struct MenuBarView: View {
             Circle()
                 .fill(coordinator.anyRunning ? Color.wpDesignYellow : Color.green)
                 .frame(width: 8, height: 8)
-            Text(coordinator.anyRunning ? "Backing up…" : "SpectaBackup")
+            Text(coordinator.anyRunning ? "Backing up…" : "SpectArk")
                 .font(.headline)
             Spacer()
         }

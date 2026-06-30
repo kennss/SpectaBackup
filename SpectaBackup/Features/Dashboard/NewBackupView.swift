@@ -114,26 +114,32 @@ struct NewBackupView: View {
     }
 
     private var triggerSection: some View {
-        section("When to back up") {
-            row("Trigger") {
-                Picker("", selection: $isRealtime) {
-                    Text("Realtime").tag(true)
-                    Text("Scheduled").tag(false)
+        VStack(alignment: .leading, spacing: 8) {
+            section("When to back up") {
+                row("Trigger") {
+                    Picker("", selection: $isRealtime) {
+                        Text("Realtime").tag(true)
+                        Text("Scheduled").tag(false)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 200)
                 }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 200)
-            }
-            if !isRealtime {
-                rowDivider
-                row("Run every") {
-                    HStack(spacing: 10) {
-                        Stepper("\(intervalCount)", value: $intervalCount, in: 1...365).fixedSize()
-                        Picker("", selection: $intervalUnit) {
-                            ForEach(IntervalUnit.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                if !isRealtime {
+                    rowDivider
+                    row("Run every") {
+                        HStack(spacing: 10) {
+                            Stepper("\(intervalCount)", value: $intervalCount, in: 1...365).fixedSize()
+                            Picker("", selection: $intervalUnit) {
+                                ForEach(IntervalUnit.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                            }
+                            .labelsHidden().frame(width: 100)
                         }
-                        .labelsHidden().frame(width: 100)
                     }
                 }
             }
+            Text(isRealtime
+                 ? "Realtime: SpectArk watches this folder and creates a new snapshot automatically whenever files change — no timer, no manual runs. Unlike most backup apps that only run on a schedule, this keeps a near-continuous version history."
+                 : "Scheduled: a new snapshot runs automatically on the interval you set, in the background — SpectArk doesn't need to be the active app.")
+                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
         }
     }
 
