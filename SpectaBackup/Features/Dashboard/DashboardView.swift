@@ -75,13 +75,17 @@ struct DashboardView: View {
             isPresented: Binding(get: { jobToRemove != nil }, set: { if !$0 { jobToRemove = nil } }),
             presenting: jobToRemove
         ) { job in
-            Button("Remove Backup", role: .destructive) {
+            Button("Remove & Delete All Snapshots", role: .destructive) {
                 if selectedJobID == job.id { selectedJobID = nil }
-                coordinator.removeJob(job.id)
+                coordinator.removeJob(job.id, deleteSnapshots: true)
+            }
+            Button("Remove Only (Keep Snapshots on Disk)") {
+                if selectedJobID == job.id { selectedJobID = nil }
+                coordinator.removeJob(job.id, deleteSnapshots: false)
             }
             Button("Cancel", role: .cancel) {}
         } message: { job in
-            Text("“\(job.name)” will stop being backed up and disappear from this list. Existing snapshots on \(job.destination.lastPathComponent) are NOT deleted — you can remove them in Finder if you want the space back.")
+            Text("“\(job.name)” will stop being backed up. Also delete its snapshots on \(job.destination.lastPathComponent) to free the space, or keep them on disk.")
         }
     }
 

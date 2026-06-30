@@ -55,11 +55,16 @@ final class BackupCoordinator {
         runNow(job.id)
     }
 
-    func removeJob(_ id: UUID) {
+    func removeJob(_ id: UUID, deleteSnapshots: Bool = false) {
         stopWatcher(id)
+        let job = jobs.first(where: { $0.id == id })
         jobs.removeAll { $0.id == id }
         states[id] = nil
         persist()
+        if deleteSnapshots, let job {
+            KeychainStorage.removePassword(for: id)   // drop the encrypted repo's key too, if any
+            Task { await runner.deleteJobData(for: job) }
+        }
     }
 
     /// Apply edited settings (trigger / retention / quota) and restart its watcher accordingly.

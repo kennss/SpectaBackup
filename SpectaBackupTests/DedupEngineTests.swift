@@ -82,4 +82,25 @@ final class DedupEngineTests: XCTestCase {
         XCTAssertEqual(treesAfterFirst, treesAfterSecond, "unchanged dirs must reuse content-addressed trees")
         XCTAssertGreaterThan(treesAfterFirst, 0)
     }
+
+    /// A fresh engine (new backup session) must load the blob index before backing up, or it re-stores
+    /// every blob instead of deduplicating against what's already in the repo.
+    func testNewSessionDedupsAgainstExistingBlobs() async throws {
+        let src = try buildSource()
+        let repo = tmp.appendingPathComponent("repo")
+        let backend = try LocalBackend(root: repo)
+        let chunker = FastCDC(minSize: 64, avgSize: 256, maxSize: 1024)
+
+        let session1 = DedupEngine(backend: backend, keys: keys, chunker: chunker)
+        _ = try await session1.backUp(sources: [src], snapshotID: "s1", now: 1000)
+        let packsAfterFirst = try await backend.list(prefix: "data").count
+
+        let session2 = DedupEngine(backend: backend, keys: keys, chunker: chunker)
+        try await session2.open()   // without this, identical data would be re-stored
+        _ = try await session2.backUp(sources: [src], snapshotID: "s2", now: 2000)
+        let packsAfterSecond = try await backend.list(prefix: "data").count
+
+        XCTAssertEqual(packsAfterFirst, packsAfterSecond,
+                       "a new session must dedup identical data — no new packs should be written")
+    }
 }

@@ -80,6 +80,7 @@ actor BackupRunner {
 
         let (config, keys) = try await RepoManager.unlock(backend: backend, password: Data(password.utf8))
         let engine = DedupEngine(backend: backend, keys: keys, chunker: config.chunker)
+        try await engine.open()   // load the blob index so existing blobs are deduplicated, not re-stored
 
         let catalog = try CatalogStore(path: jobRoot.appendingPathComponent("catalog.sqlite").path)
         let now = Date()
@@ -152,6 +153,12 @@ actor BackupRunner {
             try? Syscalls.clearUserFlags(entry.url.path)
         }
         try? FileManager.default.removeItem(at: dir)
+    }
+
+    /// Delete ALL on-disk data for a job (snapshots + encrypted repo + catalog) — used when the user
+    /// removes a job and chooses to delete its snapshots too.
+    func deleteJobData(for job: BackupJob) {
+        deleteSnapshotTree(Self.jobRoot(for: job))
     }
 
     /// Snapshot history for a job (newest first), read from its catalog.
@@ -232,6 +239,7 @@ actor BackupRunner {
         let backend = try LocalBackend(root: jobRoot.appendingPathComponent("repo", isDirectory: true))
         let (config, keys) = try await RepoManager.unlock(backend: backend, password: Data(password.utf8))
         let engine = DedupEngine(backend: backend, keys: keys, chunker: config.chunker)
+        try await engine.open()   // load the blob index up front so snapshots dedup against each other
 
         let total = plaintext.count
         // 1) Re-encrypt every snapshot. A failure throws → plaintext stays untouched.
