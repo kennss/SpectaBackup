@@ -7,7 +7,7 @@
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 //  Notes:
 //  - File-level events + IgnoreSelf; the destination lives outside the watched source roots, so our
@@ -64,9 +64,16 @@ final class FolderWatcher: @unchecked Sendable {
 
     deinit { stop() }
 
-    private static let eventCallback: FSEventStreamCallback = { _, info, _, _, _, _ in
+    private static let eventCallback: FSEventStreamCallback = { _, info, _, eventPaths, _, _ in
         guard let info else { return }
         let watcher = Unmanaged<FolderWatcher>.fromOpaque(info).takeUnretainedValue()
+        // UseCFTypes ⇒ eventPaths is a CFArray of CFString. Don't wake a backup pass when every changed
+        // path is just Finder noise (.DS_Store) — it's excluded from backups, so it would only spawn
+        // no-op passes. Any real change alongside it still triggers normally.
+        let paths = (Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as NSArray) as? [String] ?? []
+        if !paths.isEmpty, paths.allSatisfy({ ($0 as NSString).lastPathComponent == ".DS_Store" }) {
+            return
+        }
         watcher.onChange()
     }
 }
