@@ -278,7 +278,7 @@ struct JobSettingsView: View {
                         else { dismiss() }
                     } catch {
                         isWorking = false
-                        errorMessage = String(describing: error)
+                        errorMessage = BackupErrorMessage.describe(error)
                     }
                 }
                 return

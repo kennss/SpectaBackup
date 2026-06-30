@@ -98,7 +98,13 @@ private struct BackupDefaultsPane: View {
             Section {
                 Picker("Trigger", selection: triggerBinding) {
                     Text("Realtime").tag(true)
-                    Text("Scheduled (daily)").tag(false)
+                    Text("Scheduled").tag(false)
+                }
+                if case .interval = settings.jobDefaults.trigger {
+                    Stepper("Run every \(intervalCountBinding.wrappedValue)", value: intervalCountBinding, in: 1...365)
+                    Picker("Unit", selection: intervalUnitBinding) {
+                        ForEach(IntervalUnit.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
                 }
             } header: {
                 Text("When to back up")
@@ -126,7 +132,39 @@ private struct BackupDefaultsPane: View {
     private var triggerBinding: Binding<Bool> {
         Binding(
             get: { if case .realtime = model.settings.jobDefaults.trigger { return true }; return false },
-            set: { model.settings.jobDefaults.trigger = $0 ? .realtime : .interval(IntervalSpec(unit: .days, count: 1)) }
+            set: { realtime in
+                if realtime {
+                    model.settings.jobDefaults.trigger = .realtime
+                } else if case .interval = model.settings.jobDefaults.trigger {
+                    // keep the existing interval when switching back to scheduled
+                } else {
+                    model.settings.jobDefaults.trigger = .interval(IntervalSpec(unit: .days, count: 1))
+                }
+            }
+        )
+    }
+
+    private var currentUnit: IntervalUnit {
+        if case .interval(let spec) = model.settings.jobDefaults.trigger { return spec.unit }
+        return .days
+    }
+
+    private var currentCount: Int {
+        if case .interval(let spec) = model.settings.jobDefaults.trigger { return spec.count }
+        return 1
+    }
+
+    private var intervalCountBinding: Binding<Int> {
+        Binding(
+            get: { currentCount },
+            set: { model.settings.jobDefaults.trigger = .interval(IntervalSpec(unit: currentUnit, count: max(1, $0))) }
+        )
+    }
+
+    private var intervalUnitBinding: Binding<IntervalUnit> {
+        Binding(
+            get: { currentUnit },
+            set: { model.settings.jobDefaults.trigger = .interval(IntervalSpec(unit: $0, count: currentCount)) }
         )
     }
 

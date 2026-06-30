@@ -135,7 +135,7 @@ final class BackupCoordinator {
             var st = state(for: jobID)
             st.isRunning = false
             st.throughputBytesPerSec = 0
-            st.lastError = String(describing: error)
+            st.lastError = BackupErrorMessage.describe(error)
             states[jobID] = st
         }
     }
@@ -261,7 +261,7 @@ final class BackupCoordinator {
                 loadHistory(for: job)
             } catch {
                 var s = state(for: jobID)
-                s.lastError = "Migration failed — plaintext backups kept: \(error)"
+                s.lastError = "Migration stopped — your plaintext backups are safe. " + BackupErrorMessage.describe(error)
                 states[jobID] = s
             }
             var s = state(for: jobID)

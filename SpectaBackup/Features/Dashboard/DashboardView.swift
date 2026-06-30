@@ -21,6 +21,7 @@ struct DashboardView: View {
     @State private var settingsJob: BackupJob?
     @State private var restoreJob: BackupJob?
     @State private var jobToRemove: BackupJob?
+    @State private var showNewBackup = false
 
     private var coordinator: BackupCoordinator { model.coordinator }
 
@@ -38,7 +39,7 @@ struct DashboardView: View {
             .frame(minWidth: 240)
             .toolbar {
                 ToolbarItem {
-                    Button(action: addJob) { Label("Add Backup", systemImage: "plus") }
+                    Button { showNewBackup = true } label: { Label("Add Backup", systemImage: "plus") }
                 }
             }
             // Bottom-left: destination disk capacity + global settings (defaults for new jobs).
@@ -54,6 +55,9 @@ struct DashboardView: View {
             if phase == .active { fdaGranted = FullDiskAccess.isGranted }
         }
         .sheet(isPresented: $showGlobalSettings) { GlobalSettingsView().environment(model) }
+        .sheet(isPresented: $showNewBackup) {
+            NewBackupView(onCreated: { selectedJobID = $0 }).environment(model)
+        }
         .sheet(item: $settingsJob) { JobSettingsView(job: $0) }
         .sheet(item: $restoreJob) { job in
             RestoreView(job: job, history: coordinator.state(for: job.id).history)
@@ -150,21 +154,6 @@ struct DashboardView: View {
         .shadow(color: .black.opacity(0.15), radius: 16, y: 6)
     }
 
-    // MARK: - Actions
-
-    private func addJob() {
-        guard let source = FolderPicker.pick(prompt: "Choose Source",
-                                             message: "Choose the folder to back up.") else { return }
-        guard let destination = FolderPicker.pick(prompt: "Choose Destination",
-                                                  message: "Choose where snapshots are stored (local disk or NAS).") else { return }
-        // New jobs start from the global defaults (editable per job afterwards).
-        let defaults = model.settings.jobDefaults
-        let job = BackupJob(name: source.lastPathComponent, sources: [source], destination: destination,
-                            trigger: defaults.trigger, retention: defaults.retention,
-                            encryptionEnabled: defaults.encryptionEnabled)
-        coordinator.addJob(job)
-        selectedJobID = job.id
-    }
 }
 
 /// Sidebar row: status dot, job name + destination, and a ⋯ menu of per-job actions.

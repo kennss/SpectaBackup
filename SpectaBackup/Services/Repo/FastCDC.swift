@@ -37,18 +37,24 @@ struct FastCDC: Sendable {
     func chunk(_ data: Data, emit: (Range<Int>) -> Void) {
         let n = data.count
         guard n > 0 else { return }
-        data.withUnsafeBytes { raw in
-            let bytes = raw.bindMemory(to: UInt8.self)
-            var start = 0
-            while start < n {
-                let end = nextCut(bytes, start: start, count: n)
-                emit(start..<end)
-                start = end
+        // Hoist the static gear table out of the byte loop: a `static let` is accessed via a
+        // thread-safe once-check on every reference, which in unoptimized builds turns into a huge
+        // per-byte cost on large files. Grab a pointer to it once.
+        Self.gear.withUnsafeBufferPointer { gear in
+            data.withUnsafeBytes { raw in
+                let bytes = raw.bindMemory(to: UInt8.self)
+                var start = 0
+                while start < n {
+                    let end = nextCut(bytes, start: start, count: n, gear: gear)
+                    emit(start..<end)
+                    start = end
+                }
             }
         }
     }
 
-    private func nextCut(_ bytes: UnsafeBufferPointer<UInt8>, start: Int, count n: Int) -> Int {
+    private func nextCut(_ bytes: UnsafeBufferPointer<UInt8>, start: Int, count n: Int,
+                         gear: UnsafeBufferPointer<UInt64>) -> Int {
         let remaining = n - start
         if remaining <= minSize { return n }
 
@@ -58,12 +64,12 @@ struct FastCDC: Sendable {
         let maxEnd = min(start + maxSize, n)
 
         while i < avgEnd {
-            fingerprint = (fingerprint << 1) &+ Self.gear[Int(bytes[i])]
+            fingerprint = (fingerprint << 1) &+ gear[Int(bytes[i])]
             if (fingerprint & maskS) == 0 { return i + 1 }
             i += 1
         }
         while i < maxEnd {
-            fingerprint = (fingerprint << 1) &+ Self.gear[Int(bytes[i])]
+            fingerprint = (fingerprint << 1) &+ gear[Int(bytes[i])]
             if (fingerprint & maskL) == 0 { return i + 1 }
             i += 1
         }

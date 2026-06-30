@@ -214,7 +214,7 @@ struct RestoreView: View {
                     resultMessage = "Restored snapshot to \(target.lastPathComponent)"
                 } catch {
                     isRestoring = false
-                    resultMessage = "Failed: \(error)"
+                    resultMessage = "Failed: " + BackupErrorMessage.describe(error)
                 }
             }
             return
@@ -235,7 +235,7 @@ struct RestoreView: View {
                 resultMessage = msg
             } catch {
                 isRestoring = false
-                resultMessage = "Failed: \(error)"
+                resultMessage = "Failed: " + BackupErrorMessage.describe(error)
             }
         }
     }

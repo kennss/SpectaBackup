@@ -72,6 +72,16 @@ actor BlobStore {
         return blobID
     }
 
+    /// Store a blob whose sealing was done off-actor (parallel encryption). Deduplicates against the
+    /// index/pending, then appends to the current pack — same persistence path as `put`, minus the seal.
+    func addSealed(blobID: Data, ciphertext: Data) async throws {
+        if index[blobID] != nil || pendingIDs.contains(blobID) { return }
+        pending.append((blobID, ciphertext))
+        pendingIDs.insert(blobID)
+        pendingSize += ciphertext.count
+        if pendingSize >= packTargetSize { try await flush() }
+    }
+
     /// Fetch and decrypt a blob by ID (Range read from its pack, or from the pending buffer).
     func get(_ blobID: Data) async throws -> Data {
         if let loc = index[blobID] {

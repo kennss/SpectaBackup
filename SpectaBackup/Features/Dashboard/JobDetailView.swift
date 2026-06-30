@@ -15,6 +15,7 @@ import SwiftUI
 struct JobDetailView: View {
     @Environment(AppModel.self) private var model
     let job: BackupJob
+    @State private var plaintextCount = 0
 
     private var coordinator: BackupCoordinator { model.coordinator }
     private var state: JobRuntimeState { coordinator.state(for: job.id) }
@@ -24,6 +25,7 @@ struct JobDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 sourceDestinationHeader
                 if state.isMigrating { migrationBanner }
+                else if job.encryptionEnabled, plaintextCount > 0 { migrationPrompt }
                 if let error = state.lastError { errorBanner(error) }
                 statusCards
                 storageSection
@@ -33,6 +35,9 @@ struct JobDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle(job.name)
+        .task(id: state.history.count) {
+            plaintextCount = job.encryptionEnabled ? await coordinator.plaintextSnapshotCount(job.id) : 0
+        }
     }
 
     // MARK: - Source → Destination header
@@ -143,6 +148,25 @@ struct JobDetailView: View {
     }
 
     // MARK: - Helpers
+
+    private var migrationPrompt: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.open.trianglebadge.exclamationmark")
+                .font(.title3).foregroundStyle(Color.wpDesignYellow)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(plaintextCount) plaintext snapshot\(plaintextCount == 1 ? "" : "s") not yet encrypted")
+                    .font(.callout.weight(.medium))
+                Text("Convert them into the encrypted repo, then remove the plaintext copies.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Migrate Now") { coordinator.migrateToEncrypted(job.id) }
+                .buttonStyle(.borderedProminent).tint(Color.wpDesignYellow).foregroundStyle(.black)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.wpDesignYellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
 
     private var migrationBanner: some View {
         let text = state.migrationProgress.map { "Migrating to encrypted… \($0.done)/\($0.total)" }

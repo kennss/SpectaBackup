@@ -68,40 +68,84 @@ struct DedupEngine: Sendable {
             at: dir, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
-        var nodes: [TreeNode] = []
+        var nodes = [TreeNode?](repeating: nil, count: entries.count)
         var fileCount = 0
         var bytes = 0
+        var files: [(index: Int, url: URL, name: String)] = []
 
-        for entry in entries {
+        // Directories (recursion) and symlinks are handled inline; regular files are collected to be
+        // read + chunked + encrypted in parallel below (that's the CPU/IO-heavy part).
+        for (i, entry) in entries.enumerated() {
             let name = entry.lastPathComponent
             let rv = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-
             if rv.isSymbolicLink == true {
-                let target = try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-                nodes.append(TreeNode(kind: .symlink, name: name, target: target))
+                nodes[i] = TreeNode(kind: .symlink, name: name,
+                                    target: try FileManager.default.destinationOfSymbolicLink(atPath: entry.path))
             } else if rv.isDirectory == true {
                 let child = try await backUpDirectory(entry)
-                nodes.append(TreeNode(kind: .directory, name: name, treeID: child.treeID))
+                nodes[i] = TreeNode(kind: .directory, name: name, treeID: child.treeID)
                 fileCount += child.fileCount
                 bytes += child.bytes
             } else {
-                let data = try Data(contentsOf: entry)   // TODO: stream large files through FastCDC
-                var ranges: [Range<Int>] = []
-                chunker.chunk(data) { ranges.append($0) }
-                var blobs: [Data] = []
-                for range in ranges { blobs.append(try await blobStore.put(data.subdata(in: range))) }
-
-                let attrs = try FileManager.default.attributesOfItem(atPath: entry.path)
-                nodes.append(TreeNode(kind: .file, name: name, blobs: blobs, size: data.count,
-                                      mode: (attrs[.posixPermissions] as? NSNumber)?.uint16Value,
-                                      mtime: (attrs[.modificationDate] as? Date)?.timeIntervalSince1970))
-                fileCount += 1
-                bytes += data.count
+                files.append((i, entry, name))
             }
         }
 
-        let treeID = try await writeTree(nodes)
+        // Seal files in parallel (read + FastCDC + AES-GCM off the actor), with bounded concurrency so
+        // we don't load too many files into memory at once. Pack append stays serial on the BlobStore.
+        let cipher = self.cipher
+        let chunker = self.chunker
+        let maxConcurrent = max(2, ProcessInfo.processInfo.activeProcessorCount)
+        try await withThrowingTaskGroup(of: SealedFile.self) { group in
+            var next = files.makeIterator()
+            var inFlight = 0
+            func schedule() {
+                guard let f = next.next() else { return }
+                group.addTask { try Self.sealFile(at: f.url, name: f.name, index: f.index,
+                                                  cipher: cipher, chunker: chunker) }
+                inFlight += 1
+            }
+            for _ in 0..<maxConcurrent { schedule() }
+            while inFlight > 0 {
+                guard let sealed = try await group.next() else { break }
+                inFlight -= 1
+                for blob in sealed.blobs { try await blobStore.addSealed(blobID: blob.id, ciphertext: blob.ct) }
+                nodes[sealed.index] = sealed.node
+                fileCount += 1
+                bytes += sealed.size
+                schedule()
+            }
+        }
+
+        let treeID = try await writeTree(nodes.compactMap { $0 })
         return (treeID, fileCount, bytes)
+    }
+
+    private struct SealedFile: Sendable {
+        let index: Int
+        let node: TreeNode
+        let size: Int
+        let blobs: [(id: Data, ct: Data)]
+    }
+
+    /// Read a file, chunk it, and AES-GCM-seal every chunk — pure CPU/IO with no shared state, so it's
+    /// safe to run on many files concurrently. Returns the file's tree node + its sealed blobs.
+    private static func sealFile(at url: URL, name: String, index: Int,
+                                 cipher: BlobCipher, chunker: FastCDC) throws -> SealedFile {
+        let data = try Data(contentsOf: url)   // TODO: stream very large files through FastCDC
+        var ranges: [Range<Int>] = []
+        chunker.chunk(data) { ranges.append($0) }
+        var blobs: [(id: Data, ct: Data)] = []
+        blobs.reserveCapacity(ranges.count)
+        for range in ranges {
+            let (id, ct) = try cipher.seal(data.subdata(in: range))
+            blobs.append((id, ct))
+        }
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        let node = TreeNode(kind: .file, name: name, blobs: blobs.map { $0.id }, size: data.count,
+                            mode: (attrs[.posixPermissions] as? NSNumber)?.uint16Value,
+                            mtime: (attrs[.modificationDate] as? Date)?.timeIntervalSince1970)
+        return SealedFile(index: index, node: node, size: data.count, blobs: blobs)
     }
 
     /// Serialize, encrypt, and store a tree (content-addressed → an identical tree is stored once).
