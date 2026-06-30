@@ -189,6 +189,84 @@ actor BackupRunner {
                                            progress: progress)
     }
 
+    /// Restore an entire encrypted snapshot into a target folder (each backed-up source becomes a
+    /// subfolder). File-by-file selection for encrypted repos is a follow-up.
+    func restoreEncrypted(job: BackupJob, snapshotID: String, to target: URL) async throws {
+        guard let password = KeychainStorage.password(for: job.id) else {
+            throw EncryptedBackupError.passwordMissing
+        }
+        let backend = try LocalBackend(root: Self.jobRoot(for: job).appendingPathComponent("repo", isDirectory: true))
+        let (config, keys) = try await RepoManager.unlock(backend: backend, password: Data(password.utf8))
+        let engine = DedupEngine(backend: backend, keys: keys, chunker: config.chunker)
+        try await engine.restore(snapshotID: snapshotID, to: target)
+    }
+
+    // MARK: - Plaintext → encrypted migration
+
+    /// Number of complete PLAINTEXT snapshots (not yet migrated) for a job.
+    func plaintextSnapshotCount(for job: BackupJob) async -> Int {
+        let catalogPath = Self.jobRoot(for: job).appendingPathComponent("catalog.sqlite").path
+        guard FileManager.default.fileExists(atPath: catalogPath),
+              let catalog = try? CatalogStore(path: catalogPath),
+              let snaps = try? await catalog.snapshots(jobID: job.id) else { return 0 }
+        return snaps.filter(Self.isPlaintext).count
+    }
+
+    /// Re-encrypt EVERY plaintext snapshot into the repo (preserving each snapshot's timestamp), then —
+    /// only after all succeed — delete the plaintext trees + their catalog rows. If any snapshot fails,
+    /// it aborts and the plaintext is left completely intact (no data loss, no half-deleted state).
+    func migrateToEncrypted(job: BackupJob, progress: @escaping @Sendable (Int, Int) -> Void) async throws {
+        guard let password = KeychainStorage.password(for: job.id) else {
+            throw EncryptedBackupError.passwordMissing
+        }
+        let jobRoot = Self.jobRoot(for: job)
+        let snapshotsDir = jobRoot.appendingPathComponent("snapshots", isDirectory: true)
+        let catalog = try CatalogStore(path: jobRoot.appendingPathComponent("catalog.sqlite").path)
+
+        // Oldest first, so assigned seqIds stay in chronological order.
+        let plaintext = (try await catalog.snapshots(jobID: job.id))
+            .filter(Self.isPlaintext)
+            .sorted { $0.seqId < $1.seqId }
+        guard !plaintext.isEmpty else { return }
+
+        let backend = try LocalBackend(root: jobRoot.appendingPathComponent("repo", isDirectory: true))
+        let (config, keys) = try await RepoManager.unlock(backend: backend, password: Data(password.utf8))
+        let engine = DedupEngine(backend: backend, keys: keys, chunker: config.chunker)
+
+        let total = plaintext.count
+        // 1) Re-encrypt every snapshot. A failure throws → plaintext stays untouched.
+        for (index, snap) in plaintext.enumerated() {
+            progress(index, total)
+            let snapDir = snapshotsDir.appendingPathComponent(snap.dirName, isDirectory: true)
+            let sourceRoots = job.sources
+                .map { snapDir.appendingPathComponent($0.lastPathComponent, isDirectory: true) }
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
+            let newSeqId = try await catalog.beginSnapshot(jobID: job.id, timestamp: snap.timestamp, sourceSnapshotID: nil)
+            let encID = "enc-\(newSeqId)"
+            do {
+                let result = try await engine.backUp(sources: sourceRoots, snapshotID: encID,
+                                                     now: snap.timestamp.timeIntervalSince1970)
+                try await catalog.markComplete(seqId: newSeqId, dirName: encID, fileCount: result.fileCount,
+                                               logicalBytes: Int64(result.totalBytes), addedBlocks: 0, durationMs: 0)
+            } catch {
+                try? await catalog.markFailed(seqId: newSeqId)
+                throw error
+            }
+        }
+        progress(total, total)
+
+        // 2) Everything is safely re-encrypted → now remove the plaintext trees + their catalog rows.
+        for snap in plaintext {
+            deleteSnapshotTree(snapshotsDir.appendingPathComponent(snap.dirName, isDirectory: true))
+            try? await catalog.deleteSnapshot(seqId: snap.seqId)
+        }
+    }
+
+    /// A complete, non-encrypted snapshot (encrypted ones use an "enc-" dirName).
+    private static func isPlaintext(_ snap: SnapshotRecord) -> Bool {
+        snap.status == .complete && !snap.dirName.isEmpty && !snap.dirName.hasPrefix("enc-")
+    }
+
     static func jobRoot(for job: BackupJob) -> URL {
         job.destination.appendingPathComponent("SpectaBackup/\(job.id.uuidString)", isDirectory: true)
     }

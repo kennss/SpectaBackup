@@ -1,13 +1,13 @@
 //
 //  @file        DashboardView.swift
-//  @description Dashboard window: a sidebar list of backup jobs plus a detail pane. Add a job by
-//               picking a source folder and a destination; select a job to see status, run a manual
-//               backup, and browse snapshot history. The empty state shows the wordmark and, when
-//               Full Disk Access is missing, a branded onboarding card (auto-refreshed on focus).
+//  @description Dashboard window: a sidebar list of backup jobs plus a detail pane. Add a job with the
+//               toolbar +; per-job actions live in a ⋯ menu on each row (Back Up Now / Restore /
+//               Settings / Remove). The sidebar bottom-left opens GLOBAL settings (defaults for new
+//               jobs). The empty state shows the wordmark and a Full Disk Access card when needed.
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 
 import SwiftUI
@@ -17,6 +17,10 @@ struct DashboardView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedJobID: UUID?
     @State private var fdaGranted = FullDiskAccess.isGranted
+    @State private var showGlobalSettings = false
+    @State private var settingsJob: BackupJob?
+    @State private var restoreJob: BackupJob?
+    @State private var jobToRemove: BackupJob?
 
     private var coordinator: BackupCoordinator { model.coordinator }
 
@@ -24,7 +28,9 @@ struct DashboardView: View {
         NavigationSplitView {
             List(selection: $selectedJobID) {
                 ForEach(coordinator.jobs) { job in
-                    JobRow(job: job, state: coordinator.state(for: job.id))
+                    JobRow(job: job, state: coordinator.state(for: job.id), coordinator: coordinator,
+                           onSettings: { settingsJob = job }, onRestore: { restoreJob = job },
+                           onRemove: { jobToRemove = job })
                         .tag(job.id)
                 }
             }
@@ -32,10 +38,22 @@ struct DashboardView: View {
             .frame(minWidth: 240)
             .toolbar {
                 ToolbarItem {
-                    Button(action: addJob) {
-                        Label("Add Backup", systemImage: "plus")
-                    }
+                    Button(action: addJob) { Label("Add Backup", systemImage: "plus") }
                 }
+            }
+            // Bottom-left: global settings (defaults for new jobs).
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Button { showGlobalSettings = true } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Settings — defaults for new backups")
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.bar)
             }
         } detail: {
             if let id = selectedJobID, let job = coordinator.jobs.first(where: { $0.id == id }) {
@@ -44,9 +62,26 @@ struct DashboardView: View {
                 emptyState
             }
         }
-        // Re-check FDA when the user returns from System Settings — no relaunch needed.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { fdaGranted = FullDiskAccess.isGranted }
+        }
+        .sheet(isPresented: $showGlobalSettings) { GlobalSettingsView().environment(model) }
+        .sheet(item: $settingsJob) { JobSettingsView(job: $0) }
+        .sheet(item: $restoreJob) { job in
+            RestoreView(job: job, history: coordinator.state(for: job.id).history)
+        }
+        .confirmationDialog(
+            "Remove this backup?",
+            isPresented: Binding(get: { jobToRemove != nil }, set: { if !$0 { jobToRemove = nil } }),
+            presenting: jobToRemove
+        ) { job in
+            Button("Remove Backup", role: .destructive) {
+                if selectedJobID == job.id { selectedJobID = nil }
+                coordinator.removeJob(job.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { job in
+            Text("“\(job.name)” will stop being backed up and disappear from this list. Existing snapshots on \(job.destination.lastPathComponent) are NOT deleted — you can remove them in Finder if you want the space back.")
         }
     }
 
@@ -105,16 +140,24 @@ struct DashboardView: View {
                                              message: "Choose the folder to back up.") else { return }
         guard let destination = FolderPicker.pick(prompt: "Choose Destination",
                                                   message: "Choose where snapshots are stored (local disk or NAS).") else { return }
-        let job = BackupJob(name: source.lastPathComponent, sources: [source], destination: destination)
+        // New jobs start from the global defaults (editable per job afterwards).
+        let defaults = model.settings.jobDefaults
+        let job = BackupJob(name: source.lastPathComponent, sources: [source], destination: destination,
+                            trigger: defaults.trigger, retention: defaults.retention,
+                            encryptionEnabled: defaults.encryptionEnabled)
         coordinator.addJob(job)
         selectedJobID = job.id
     }
 }
 
-/// Sidebar row: job name, destination, and a status dot.
+/// Sidebar row: status dot, job name + destination, and a ⋯ menu of per-job actions.
 private struct JobRow: View {
     let job: BackupJob
     let state: JobRuntimeState
+    let coordinator: BackupCoordinator
+    var onSettings: () -> Void
+    var onRestore: () -> Void
+    var onRemove: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -129,6 +172,26 @@ private struct JobRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            Spacer(minLength: 4)
+            Menu {
+                Button { coordinator.runNow(job.id) } label: { Label("Back Up Now", systemImage: "arrow.clockwise") }
+                    .disabled(state.isRunning)
+                Button(action: onRestore) { Label("Restore…", systemImage: "clock.arrow.circlepath") }
+                    .disabled(state.history.isEmpty)
+                Button(action: onSettings) { Label("Settings…", systemImage: "gearshape") }
+                Divider()
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
         .padding(.vertical, 2)
     }

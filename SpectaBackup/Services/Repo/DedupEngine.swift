@@ -57,7 +57,7 @@ struct DedupEngine: Sendable {
         let snapshot = Snapshot(rootTreeID: rootTreeID,
                                 sourcePath: sources.map(\.path).joined(separator: ", "),
                                 createdAt: now, fileCount: fileCount, totalBytes: totalBytes)
-        let sealed = try cipher.sealMetadata(try JSONEncoder().encode(snapshot),
+        let sealed = try cipher.sealMetadata(try Self.canonicalEncoder.encode(snapshot),
                                              context: "snapshots/\(snapshotID)")
         try await backend.put(key: "snapshots/\(snapshotID)", data: sealed)
         return snapshot
@@ -106,7 +106,7 @@ struct DedupEngine: Sendable {
 
     /// Serialize, encrypt, and store a tree (content-addressed → an identical tree is stored once).
     private func writeTree(_ nodes: [TreeNode]) async throws -> String {
-        let treeData = try JSONEncoder().encode(nodes)
+        let treeData = try Self.canonicalEncoder.encode(nodes)
         let treeID = Self.hashHex(treeData)
         let key = "trees/\(treeID.prefix(2))/\(treeID)"
         if ((try? await backend.stat(key: key)) ?? nil) == nil {
@@ -158,6 +158,15 @@ struct DedupEngine: Sendable {
             }
         }
     }
+
+    /// Deterministic key order is REQUIRED for content addressing: without `.sortedKeys`, Foundation's
+    /// JSONEncoder emits struct keys in an unstable order, so identical trees would hash differently
+    /// and never dedup.
+    private static let canonicalEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return encoder
+    }()
 
     private static func hashHex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

@@ -98,7 +98,8 @@ final class BackupCoordinator {
 
     func runNow(_ jobID: UUID, quietWindow: TimeInterval = 0) {
         guard let job = jobs.first(where: { $0.id == jobID }) else { return }
-        guard !state(for: jobID).isRunning else { return }
+        let current = state(for: jobID)
+        guard !current.isRunning, !current.isMigrating else { return }
         var st = state(for: jobID)
         st.isRunning = true
         st.lastError = nil
@@ -192,6 +193,54 @@ final class BackupCoordinator {
         guard let job = jobs.first(where: { $0.id == jobID }) else { return RestoreEngine.Outcome() }
         return try await runner.restore(job: job, snapshotDirName: snapshotDirName, sourceName: sourceName,
                                         relPaths: relPaths, to: target, conflict: conflict, progress: progress)
+    }
+
+    /// Restore an entire encrypted snapshot into a target folder.
+    func restoreEncrypted(jobID: UUID, snapshotDirName: String, to target: URL) async throws {
+        guard let job = jobs.first(where: { $0.id == jobID }) else { return }
+        try await runner.restoreEncrypted(job: job, snapshotID: snapshotDirName, to: target)
+    }
+
+    // MARK: - Encryption migration
+
+    /// How many plaintext snapshots a job still has (used to decide whether to migrate).
+    func plaintextSnapshotCount(_ jobID: UUID) async -> Int {
+        guard let job = jobs.first(where: { $0.id == jobID }) else { return 0 }
+        return await runner.plaintextSnapshotCount(for: job)
+    }
+
+    /// Migrate a job's plaintext snapshots into its encrypted repo (off-main), surfacing progress and
+    /// keeping the plaintext intact if anything fails.
+    func migrateToEncrypted(_ jobID: UUID) {
+        guard let job = jobs.first(where: { $0.id == jobID }) else { return }
+        var st = state(for: jobID)
+        st.isMigrating = true
+        st.migrationProgress = MigrationProgress(done: 0, total: 0)
+        st.lastError = nil
+        states[jobID] = st
+
+        let progress: @Sendable (Int, Int) -> Void = { done, total in
+            Task { @MainActor [weak self] in
+                guard var s = self?.states[jobID] else { return }
+                s.migrationProgress = MigrationProgress(done: done, total: total)
+                self?.states[jobID] = s
+            }
+        }
+        Task {
+            do {
+                try await runner.migrateToEncrypted(job: job, progress: progress)
+                loadHistory(for: job)
+            } catch {
+                var s = state(for: jobID)
+                s.lastError = "Migration failed — plaintext backups kept: \(error)"
+                states[jobID] = s
+            }
+            var s = state(for: jobID)
+            s.isMigrating = false
+            s.migrationProgress = nil
+            states[jobID] = s
+            updateFreeSpace(jobID)
+        }
     }
 
     // MARK: - Realtime monitoring

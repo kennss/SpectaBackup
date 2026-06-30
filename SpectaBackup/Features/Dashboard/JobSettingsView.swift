@@ -188,7 +188,7 @@ struct JobSettingsView: View {
                 }
             }
             Text(encryptionEnabled
-                 ? "Files are chunked, deduplicated, and encrypted (AES-256-GCM) into a repo. A recovery key is shown once when you first enable it — save it."
+                 ? "Files are chunked, deduplicated, and encrypted (AES-256-GCM) into a repo. A recovery key is shown once when you first enable it — save it. Any existing plaintext backups are migrated into the encrypted repo (history preserved) and removed only after they are safely re-encrypted."
                  : "Off: backups are stored as browsable plaintext snapshots.")
                 .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
         }
@@ -269,6 +269,11 @@ struct JobSettingsView: View {
                         let recovery = try await model.coordinator.enableEncryption(for: updated, password: password)
                         isWorking = false
                         model.coordinator.updateJob(updated)
+                        // Migrate existing plaintext snapshots into the encrypted repo (data + history
+                        // preserved; plaintext removed only after every snapshot is safely re-encrypted).
+                        if await model.coordinator.plaintextSnapshotCount(updated.id) > 0 {
+                            model.coordinator.migrateToEncrypted(updated.id)
+                        }
                         if let recovery { recoveryKey = recovery }   // newly created → show once
                         else { dismiss() }
                     } catch {
@@ -276,6 +281,17 @@ struct JobSettingsView: View {
                         errorMessage = String(describing: error)
                     }
                 }
+                return
+            }
+            // Already encrypted, no new password: migrate any leftover plaintext with the stored key.
+            if job.encryptionEnabled {
+                model.coordinator.updateJob(updated)
+                Task {
+                    if await model.coordinator.plaintextSnapshotCount(updated.id) > 0 {
+                        model.coordinator.migrateToEncrypted(updated.id)
+                    }
+                }
+                dismiss()
                 return
             }
         } else if job.encryptionEnabled {

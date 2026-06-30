@@ -47,7 +47,8 @@ struct RestoreView: View {
     }
 
     private var resolvedTarget: URL? {
-        useOriginalLocation ? job.sources.first { $0.lastPathComponent == sourceName } : customTarget
+        if job.encryptionEnabled { return customTarget }
+        return useOriginalLocation ? job.sources.first { $0.lastPathComponent == sourceName } : customTarget
     }
 
     var body: some View {
@@ -116,7 +117,14 @@ struct RestoreView: View {
 
     @ViewBuilder
     private var treeSection: some View {
-        if let browser {
+        if job.encryptionEnabled {
+            ContentUnavailableView {
+                Label("Encrypted Snapshot", systemImage: "lock.doc")
+            } description: {
+                Text("Encrypted backups restore the whole snapshot into a chosen folder. Per-file browsing is coming soon.")
+            }
+            .frame(maxHeight: .infinity)
+        } else if let browser {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(browser.children(of: "")) { entry in
@@ -137,27 +145,36 @@ struct RestoreView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Text("Restore to").foregroundStyle(.secondary)
-                Picker("", selection: $useOriginalLocation) {
-                    Text("Original location").tag(true)
-                    Text("Another folder").tag(false)
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 280)
-                if !useOriginalLocation {
-                    Button(customTarget?.lastPathComponent ?? "Choose…") {
+                if job.encryptionEnabled {
+                    Button(customTarget?.lastPathComponent ?? "Choose folder…") {
                         customTarget = FolderPicker.pick(prompt: "Choose Restore Target",
-                                                         message: "Restore selected items into this folder.")
+                                                         message: "Restore the entire snapshot into this folder.")
+                    }
+                } else {
+                    Picker("", selection: $useOriginalLocation) {
+                        Text("Original location").tag(true)
+                        Text("Another folder").tag(false)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 280)
+                    if !useOriginalLocation {
+                        Button(customTarget?.lastPathComponent ?? "Choose…") {
+                            customTarget = FolderPicker.pick(prompt: "Choose Restore Target",
+                                                             message: "Restore selected items into this folder.")
+                        }
                     }
                 }
                 Spacer()
             }
 
-            HStack(spacing: 10) {
-                Text("If a file exists").foregroundStyle(.secondary)
-                Picker("", selection: $conflict) {
-                    ForEach(RestoreEngine.ConflictPolicy.allCases) { Text($0.label).tag($0) }
+            if !job.encryptionEnabled {
+                HStack(spacing: 10) {
+                    Text("If a file exists").foregroundStyle(.secondary)
+                    Picker("", selection: $conflict) {
+                        ForEach(RestoreEngine.ConflictPolicy.allCases) { Text($0.label).tag($0) }
+                    }
+                    .labelsHidden().frame(width: 160)
+                    Spacer()
                 }
-                .labelsHidden().frame(width: 160)
-                Spacer()
             }
 
             HStack {
@@ -168,11 +185,14 @@ struct RestoreView: View {
                     Text(resultMessage).font(.callout).foregroundStyle(.secondary)
                 }
                 if isRestoring { ProgressView().controlSize(.small) }
-                Button("Restore \(selection.count) item\(selection.count == 1 ? "" : "s")") { performRestore() }
+                Button(job.encryptionEnabled
+                       ? "Restore entire snapshot"
+                       : "Restore \(selection.count) item\(selection.count == 1 ? "" : "s")") { performRestore() }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.wpDesignYellow)
                     .foregroundStyle(.black)
-                    .disabled(selection.isEmpty || resolvedTarget == nil || isRestoring || snapshot == nil)
+                    .disabled((job.encryptionEnabled ? false : selection.isEmpty)
+                              || resolvedTarget == nil || isRestoring || snapshot == nil)
             }
         }
         .padding(16)
@@ -184,6 +204,22 @@ struct RestoreView: View {
         guard let snapshot, let target = resolvedTarget else { return }
         isRestoring = true
         resultMessage = nil
+
+        if job.encryptionEnabled {
+            let dir = snapshot.dirName
+            Task {
+                do {
+                    try await model.coordinator.restoreEncrypted(jobID: job.id, snapshotDirName: dir, to: target)
+                    isRestoring = false
+                    resultMessage = "Restored snapshot to \(target.lastPathComponent)"
+                } catch {
+                    isRestoring = false
+                    resultMessage = "Failed: \(error)"
+                }
+            }
+            return
+        }
+
         let rels = Array(selection)
         let conflictPolicy = conflict
         let src = sourceName

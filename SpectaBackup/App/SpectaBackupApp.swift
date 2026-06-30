@@ -20,12 +20,14 @@ import SwiftUI
 @main
 struct SpectaBackupApp: App {
     @State private var model = AppModel()
+    @AppStorage("spectabackup.appearance") private var appearance = "system"
 
     var body: some Scene {
         // MARK: - Dashboard window (main surface)
         Window("SpectaBackup", id: AppModel.dashboardWindowID) {
             DashboardView()
                 .environment(model)
+                .preferredColorScheme(colorScheme)
         }
         .defaultSize(width: 980, height: 640)
 
@@ -35,5 +37,14 @@ struct SpectaBackupApp: App {
                 .environment(model)
         }
         .menuBarExtraStyle(.window)
+    }
+
+    /// App appearance override from General settings (nil = follow the system).
+    private var colorScheme: ColorScheme? {
+        switch appearance {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
+        }
     }
 }

@@ -22,4 +22,13 @@ struct JobRuntimeState: Sendable {
     var destinationFreeBytes: Int64?
     /// Total capacity of the destination volume (bytes); nil if unknown.
     var destinationTotalBytes: Int64?
+    /// True while a plaintext→encrypted migration runs for this job.
+    var isMigrating: Bool = false
+    /// Migration progress; nil when not migrating.
+    var migrationProgress: MigrationProgress?
+}
+
+struct MigrationProgress: Sendable {
+    var done: Int
+    var total: Int
 }

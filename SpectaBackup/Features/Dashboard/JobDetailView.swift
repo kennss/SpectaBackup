@@ -2,12 +2,12 @@
 //  @file        JobDetailView.swift
 //  @description Detail dashboard for a job. Layout (option C): a source⟶destination visual header
 //               (Carbon Copy Cloner style), a row of status/throughput stat cards plus storage and
-//               quota gauges (Arq style), and a snapshot timeline (Time Machine style). Toolbar
-//               offers Back Up Now, Restore, Settings, and Remove.
+//               quota gauges (Arq style), and a snapshot timeline (Time Machine style). Per-job
+//               actions live in the sidebar row's ⋯ menu (not a toolbar here).
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 
 import SwiftUI
@@ -15,8 +15,6 @@ import SwiftUI
 struct JobDetailView: View {
     @Environment(AppModel.self) private var model
     let job: BackupJob
-    @State private var showRestore = false
-    @State private var showSettings = false
 
     private var coordinator: BackupCoordinator { model.coordinator }
     private var state: JobRuntimeState { coordinator.state(for: job.id) }
@@ -25,6 +23,7 @@ struct JobDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 sourceDestinationHeader
+                if state.isMigrating { migrationBanner }
                 if let error = state.lastError { errorBanner(error) }
                 statusCards
                 storageSection
@@ -34,32 +33,6 @@ struct JobDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle(job.name)
-        .toolbar {
-            ToolbarItem {
-                Button(action: { coordinator.runNow(job.id) }) {
-                    Label("Back Up Now", systemImage: "arrow.clockwise")
-                }
-                .disabled(state.isRunning)
-            }
-            ToolbarItem {
-                Button { showRestore = true } label: {
-                    Label("Restore…", systemImage: "clock.arrow.circlepath")
-                }
-                .disabled(state.history.isEmpty)
-            }
-            ToolbarItem {
-                Button { showSettings = true } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-            }
-            ToolbarItem {
-                Button(role: .destructive, action: { coordinator.removeJob(job.id) }) {
-                    Label("Remove", systemImage: "trash")
-                }
-            }
-        }
-        .sheet(isPresented: $showRestore) { RestoreView(job: job, history: state.history) }
-        .sheet(isPresented: $showSettings) { JobSettingsView(job: job) }
     }
 
     // MARK: - Source → Destination header
@@ -170,6 +143,19 @@ struct JobDetailView: View {
     }
 
     // MARK: - Helpers
+
+    private var migrationBanner: some View {
+        let text = state.migrationProgress.map { "Migrating to encrypted… \($0.done)/\($0.total)" }
+            ?? "Migrating to encrypted…"
+        return HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(text).font(.callout)
+            Spacer()
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.wpDesignYellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
 
     private func errorBanner(_ message: String) -> some View {
         Label(message, systemImage: "exclamationmark.triangle.fill")

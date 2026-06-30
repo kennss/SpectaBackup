@@ -23,6 +23,9 @@ final class AppModel {
     /// Owner of the job list and per-job runtime state, observed by the dashboard and menu bar.
     let coordinator = BackupCoordinator()
 
+    /// App-wide settings, including the defaults applied to newly created jobs.
+    let settings = AppSettings()
+
     init() {
         coordinator.refreshAllHistory()
         coordinator.startMonitoring()
