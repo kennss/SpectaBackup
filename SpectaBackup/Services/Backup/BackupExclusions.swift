@@ -6,7 +6,7 @@
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-06-30
 //
 
 import Darwin
@@ -24,7 +24,10 @@ struct BackupExclusions: Sendable {
         ".DocumentRevisions-V100",
         ".TemporaryItems",
         ".vol",
-        ".MobileBackups"
+        ".MobileBackups",
+        // Finder view metadata — rewritten just by opening a folder, so backing it up would create
+        // no-op snapshots on every Finder visit. Finder regenerates it on restore.
+        ".DS_Store"
     ]
 
     init(globs: [String] = []) {
