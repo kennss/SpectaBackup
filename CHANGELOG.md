@@ -4,6 +4,18 @@ All notable changes to SpectArk are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] — 2026-07-01
+
+### Added
+- Click the SpectArk logo (top-left) to return to the start screen.
+
+### Fixed
+- The window no longer opens larger than the screen (it's capped at the screen size and re-centered).
+- A destination (NAS share or external disk) that isn't mounted now shows a "not connected" reconnect
+  card instead of a misleading "grant Full Disk Access" message.
+- Full Disk Access onboarding: correct app name, guidance to quit and reopen after granting, a
+  "Quit & Reopen" button, and an automatic re-check so the card clears itself once access is effective.
+
 ## [1.1.0] — 2026-07-01
 
 ### Added
@@ -39,5 +51,6 @@ the bundle id and existing backups carry over).
 - Dashboard window + menu-bar dropdown with live throughput and free space.
 - Developer ID signed and notarized; universal (Apple Silicon + Intel), macOS 14+.
 
+[1.1.1]: https://github.com/kennss/SpectArk/releases/tag/v1.1.1
 [1.1.0]: https://github.com/kennss/SpectArk/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kennss/SpectArk/releases/tag/v1.0.0

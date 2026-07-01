@@ -36,6 +36,13 @@ is a known bug — these are enhancements.
 
 ## P3 — NAS completeness
 
+- **Resolve NAS destinations by share identity, not `/Volumes` path.** macOS mounts an SMB
+  share at `/Volumes/<share>`, but on remount it may use `/Volumes/<share>-1`, `-2`, … so an
+  absolute destination path stored at setup time (e.g. `/Volumes/home-1/Backup`) breaks after
+  the share re-mounts at `/Volumes/home`. Store network destinations by their `smb://server/share`
+  identity and resolve the live mount point at backup time (match via `getmntinfo`), so remounts
+  never orphan a job. Until then, a moved destination shows the "not connected" card and must be
+  re-pointed by hand.
 - **Sparsebundle history + restore.** The sparsebundle write path works; browsing history
   and restoring from it still need the same attach/detach wrapper. Also call
   `hdiutil compact` periodically so a deleted-from snapshot actually reclaims space.

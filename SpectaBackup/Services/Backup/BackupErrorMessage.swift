@@ -7,7 +7,7 @@
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-30
-//  @lastUpdated 2026-06-30
+//  @lastUpdated 2026-07-01
 //
 
 import Foundation
@@ -34,7 +34,7 @@ enum BackupErrorMessage {
             case ENOENT, ENOTDIR:
                 return "The backup disk or a file is no longer available — the disk may have been ejected mid-backup."
             case EACCES, EPERM:
-                return "Permission denied. Grant SpectaBackup Full Disk Access in System Settings."
+                return "Permission denied. Grant SpectArk Full Disk Access in System Settings, then quit and reopen the app."
             case EROFS:
                 return "The backup disk is read-only."
             default: break

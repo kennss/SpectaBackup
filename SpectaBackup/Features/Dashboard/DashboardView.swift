@@ -87,17 +87,24 @@ struct DashboardView: View {
     // MARK: - Sidebar header (brand lockup)
 
     private var sidebarHeader: some View {
-        HStack {
-            Image("Lockup")
-                .resizable()
-                .scaledToFit()
-                .frame(height: 30)
-            Spacer(minLength: 0)
+        Button {
+            selectedJobID = nil   // deselect → the detail pane shows the start screen
+        } label: {
+            HStack {
+                Image("Lockup")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 30)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 8)
         .background(.bar)
+        .help("Home — show the start screen")
     }
 
     // MARK: - Sidebar footer (destination capacity + settings)
@@ -151,17 +158,24 @@ struct DashboardView: View {
                 .foregroundStyle(Color.wpDesignYellow)
             Text("Full Disk Access Needed")
                 .font(.title3.bold())
-            Text("SpectaBackup needs Full Disk Access to read protected folders like Desktop, Documents, and Downloads.")
+            Text("SpectArk needs Full Disk Access to read protected folders like Desktop, Documents, and Downloads. After granting it, quit and reopen SpectArk for the change to take effect.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Open System Settings…") { FullDiskAccess.openSystemSettings() }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.wpDesignYellow)
-                .foregroundStyle(.black)
-                .controlSize(.large)
-                .padding(.top, 4)
+            HStack(spacing: 10) {
+                Button("Open System Settings…") { FullDiskAccess.openSystemSettings() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.wpDesignYellow)
+                    .foregroundStyle(.black)
+                Button("Quit & Reopen") { FullDiskAccess.relaunchApp() }
+            }
+            .controlSize(.large)
+            .padding(.top, 4)
+        }
+        // Re-check periodically so the card clears itself once access becomes effective.
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
+            fdaGranted = FullDiskAccess.isGranted
         }
         .padding(28)
         .frame(maxWidth: 380)

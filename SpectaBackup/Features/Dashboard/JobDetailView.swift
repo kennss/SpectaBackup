@@ -7,7 +7,7 @@
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-30
+//  @lastUpdated 2026-07-01
 //
 
 import SwiftUI
@@ -16,6 +16,7 @@ struct JobDetailView: View {
     @Environment(AppModel.self) private var model
     let job: BackupJob
     @State private var plaintextCount = 0
+    @State private var destinationOnline = true
 
     private var coordinator: BackupCoordinator { model.coordinator }
     private var state: JobRuntimeState { coordinator.state(for: job.id) }
@@ -27,7 +28,8 @@ struct JobDetailView: View {
                 if state.isMigrating { migrationBanner }
                 else if let msg = state.migrationMessage { migrationDoneBanner(msg) }
                 else if job.encryptionEnabled, plaintextCount > 0 { migrationPrompt }
-                if let error = state.lastError { errorBanner(error) }
+                if state.lastError != nil, !destinationOnline { destinationOfflineCard }
+                else if let error = state.lastError { errorBanner(error) }
                 statusCards
                 storageSection
                 snapshotsSection
@@ -38,9 +40,34 @@ struct JobDetailView: View {
         .navigationTitle(job.name)
         .toolbar { ToolbarItem(placement: .primaryAction) { runButton } }
         // Re-check after history changes AND when a migration ends, so the prompt clears itself.
-        .task(id: "\(state.history.count)-\(state.isMigrating)") {
+        .task(id: "\(state.history.count)-\(state.isMigrating)-\(state.lastError ?? "")") {
             plaintextCount = job.encryptionEnabled ? await coordinator.plaintextSnapshotCount(job.id) : 0
+            destinationOnline = DestinationStatus.isReachable(job.destination)
         }
+    }
+
+    /// Shown when a pass failed because the destination (external disk or NAS share) isn't mounted —
+    /// so the user reconnects it instead of being wrongly told to grant Full Disk Access.
+    private var destinationOfflineCard: some View {
+        let isNAS = DestinationStatus.isNetworkVolume(job.destination)
+        return HStack(spacing: 12) {
+            Image(systemName: "externaldrive.trianglebadge.exclamationmark")
+                .font(.title2).foregroundStyle(Color.wpDesignYellow)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(isNAS ? "NAS share not connected" : "Backup destination not connected")
+                    .font(.callout.weight(.semibold))
+                Text("SpectArk can’t reach \(job.destination.path). Reconnect \(isNAS ? "the NAS share" : "the drive") in Finder, then back up again.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Button("Back Up Now") { coordinator.runNow(job.id) }
+                .buttonStyle(.borderedProminent).tint(Color.wpDesignYellow).foregroundStyle(.black)
+                .disabled(state.isRunning)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.wpDesignYellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     /// Run a backup now. Lives in the detail toolbar so it's reachable without the sidebar ⋯ menu.

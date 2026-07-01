@@ -6,7 +6,7 @@
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-06-29
-//  @lastUpdated 2026-06-29
+//  @lastUpdated 2026-07-01
 //
 //  Notes:
 //  - Heuristic: TCC.db is only readable with Full Disk Access granted. Cheap and reliable enough to
@@ -27,5 +27,17 @@ enum FullDiskAccess {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    /// Quit and relaunch the app. Granting Full Disk Access to an already-running process only takes
+    /// effect after a restart, so the onboarding offers this once the user has granted access.
+    @MainActor
+    static func relaunchApp() {
+        let path = Bundle.main.bundlePath
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 1; open \"\(path)\""]
+        try? task.run()
+        NSApp.terminate(nil)
     }
 }
