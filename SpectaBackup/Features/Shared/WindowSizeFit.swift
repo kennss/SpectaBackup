@@ -1,85 +1,81 @@
 //
 //  @file        WindowSizeFit.swift
-//  @description Keeps the dashboard window from opening larger than the screen. SwiftUI's `Window`
-//               scene restores a persisted frame that can be bigger than the current display (leaving
-//               the title bar / resize edges off-screen). We turn off frame restoration and, whenever
-//               the window ends up larger than the screen, shrink it to a comfortable centered size.
-//               A window that already fits is never touched, so an in-session size the user chose is
-//               preserved.
+//  @description Forces the dashboard window to a deterministic, screen-fitted launch size and stops
+//               macOS from persisting/restoring an out-of-bounds frame. SwiftUI wires the `Window(id:)`
+//               value as the NSWindow *frame autosave name*, so the frame is stored in UserDefaults
+//               ("NSWindow Frame <id>") and, on the next launch, AppKit re-applies that saved frame —
+//               overriding `.defaultSize` and any plain `setFrame`. This runs once on first window
+//               attach: it severs the autosave association, purges the stored frame, then sets a
+//               centered frame that fits the active display. It never touches the window again, so the
+//               user can resize freely during the session (the size just isn't remembered across launches).
 //  @author      Kennt Kim
 //  @company     Calida Lab
 //  @created     2026-07-01
 //  @lastUpdated 2026-07-01
 //
 //  Notes:
-//  - The resize MUST be deferred out of the current run-loop turn. Calling setFrame synchronously from
-//    a window notification (didResize/…) lands inside AppKit's constraint-update cycle and throws
-//    (_postWindowNeedsUpdateConstraints), crashing the app. We coalesce and hop to a later main-actor
-//    turn (Task) instead.
+//  - All window mutation is deferred to a later main-actor turn. setFrame inside AppKit's constraint
+//    pass throws (_postWindowNeedsUpdateConstraints) and crashes on launch.
+//  - Order matters: clear the autosave name BEFORE setFrame so no later autosave restore can clobber it.
+//    `isRestorable` governs Cocoa state restoration, NOT frame autosave — the real fix is setFrameAutosaveName("").
+//  - `base` must stay in sync with `.defaultSize(...)` on the Window scene.
 //
 
 import SwiftUI
 import AppKit
 
-/// Attach with `.background(WindowSizeFit())`.
+/// Attach with `.background(WindowSizeFit())` on the dashboard's root view.
 struct WindowSizeFit: NSViewRepresentable {
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    /// Preferred launch size; clamped to the active screen's visible frame. Keep in sync with `.defaultSize`.
+    var base = CGSize(width: 980, height: 640)
+
+    func makeCoordinator() -> Coordinator { Coordinator(base: base) }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         let coordinator = context.coordinator
-        Task { @MainActor in coordinator.attach(to: view.window) }
+        // The view has no window during make; grab it on the next main-actor turn.
+        Task { @MainActor in coordinator.configureOnce(view.window) }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.attach(to: nsView.window)
+        context.coordinator.configureOnce(nsView.window)
     }
 
     @MainActor
     final class Coordinator {
-        private weak var window: NSWindow?
-        private var tokens: [NSObjectProtocol] = []
-        private var pending = false
+        private let base: CGSize
+        private var done = false
 
-        func attach(to window: NSWindow?) {
-            guard let window else { return }
-            if window !== self.window {
-                self.window = window
-                window.isRestorable = false                 // don't restore a stale (oversized) frame
-                let nc = NotificationCenter.default
-                tokens.forEach { nc.removeObserver($0) }
-                tokens = [NSWindow.didResizeNotification,
-                          NSWindow.didMoveNotification,
-                          NSWindow.didBecomeMainNotification].map { name in
-                    nc.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                        MainActor.assumeIsolated { self?.scheduleFit() }
-                    }
-                }
-            }
-            scheduleFit()
-        }
+        init(base: CGSize) { self.base = base }
 
-        /// Coalesce and defer: never resize inside the current layout/constraint pass (that throws).
-        private func scheduleFit() {
-            guard !pending else { return }
-            pending = true
-            Task { @MainActor [weak self] in
-                self?.pending = false
-                self?.fit()
+        /// Runs exactly once, the first time a real window is available.
+        func configureOnce(_ window: NSWindow?) {
+            guard !done, let window else { return }   // stay un-done until a window actually exists
+            done = true
+            // Defer: never mutate the window frame inside the current constraint pass (past crash).
+            Task { @MainActor [weak self, weak window] in
+                guard let self, let window else { return }
+                self.enforce(on: window)
             }
         }
 
-        private func fit() {
-            guard let window, let screen = window.screen ?? NSScreen.main else { return }
+        private func enforce(on window: NSWindow) {
+            // 1) Break the frame-autosave association → AppKit stops restoring/saving this frame.
+            window.setFrameAutosaveName("")
+            // 2) Purge any already-persisted (stale, oversized) frame for this scene id.
+            NSWindow.removeFrame(usingName: AppModel.dashboardWindowID)
+            // 3) Belt-and-suspenders: keep this window out of Cocoa state restoration too.
+            window.isRestorable = false
+            // 4) Deterministic, centered frame that fits the ACTIVE display (multi-display safe).
+            guard let screen = window.screen ?? NSScreen.main else { return }
             let visible = screen.visibleFrame
-            let frame = window.frame
-            guard frame.width > visible.width || frame.height > visible.height else { return }
-            let width = min(1040, visible.width * 0.7)
-            let height = min(760, visible.height * 0.85)
-            let origin = CGPoint(x: visible.midX - width / 2, y: visible.midY - height / 2)
-            window.setFrame(CGRect(origin: origin, size: CGSize(width: width, height: height)),
-                            display: true, animate: false)
+            let size = CGSize(width:  min(base.width,  visible.width  - 40),
+                              height: min(base.height, visible.height - 40))
+            let origin = CGPoint(x: visible.midX - size.width  / 2,
+                                 y: visible.midY - size.height / 2)
+            window.setFrame(CGRect(origin: origin, size: size), display: true, animate: false)
         }
     }
 }

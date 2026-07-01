@@ -7,8 +7,15 @@ All notable changes to SpectArk are documented here. The format follows
 ## [1.1.3] — 2026-07-01
 
 ### Fixed
-- **Launch crash.** The 1.1.2 window fix resized the window from inside AppKit's layout pass, which
-  threw and crashed on launch. The resize is now deferred out of that pass. (1.1.2 was pulled.)
+- **The window opens at a sane size on every launch** (and stays freely resizable). The real cause
+  was SwiftUI wiring the window's id as its AppKit *frame-autosave name*, so an out-of-bounds saved
+  frame was restored over `.defaultSize` each launch — earlier attempts targeted the wrong mechanism.
+  It now severs that autosave, purges the stale saved frame, and opens centered and fit to the screen.
+- **Full Disk Access is detected correctly.** macOS 15/26 blocks reading the TCC database even with
+  FDA granted, so the previous probe always reported "not granted." Detection now lists an ordinary
+  protected folder (which FDA actually unlocks), so the onboarding card no longer shows when access is
+  already granted. The card is also dismissible.
+- Fixes a launch crash introduced in the withdrawn 1.1.2 (the window resize ran inside AppKit's layout pass).
 
 ## [1.1.2] — 2026-07-01 [pulled]
 
