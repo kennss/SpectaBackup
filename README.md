@@ -90,6 +90,11 @@ APFS source snapshots (consistent reads), `clonefile`/`copyfile`, atomic
 `F_FULLFSYNC` durability. See [`docs/ENCRYPTION_DESIGN.md`](docs/ENCRYPTION_DESIGN.md)
 for the encrypted-repo design.
 
+## Roadmap
+
+Planned enhancements are tracked in [TODO.md](TODO.md) (priority-ordered), and past
+releases in [CHANGELOG.md](CHANGELOG.md). Contributions welcome.
+
 ## License
 
 MIT © 2026 Kennt Kim (Calida Lab) — see [LICENSE](LICENSE).
