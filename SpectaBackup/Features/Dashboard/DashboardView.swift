@@ -17,6 +17,7 @@ struct DashboardView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedJobID: UUID?
     @State private var fdaGranted = FullDiskAccess.isGranted
+    @AppStorage("spectark.fdaCardDismissed") private var fdaDismissed = false
     @State private var showGlobalSettings = false
     @State private var settingsJob: BackupJob?
     @State private var restoreJob: BackupJob?
@@ -140,7 +141,7 @@ struct DashboardView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(maxWidth: 300)
-            if fdaGranted {
+            if fdaGranted || fdaDismissed {
                 Text("Add a folder to back up with the + button.")
                     .foregroundStyle(.secondary)
             } else {
@@ -172,6 +173,10 @@ struct DashboardView: View {
             }
             .controlSize(.large)
             .padding(.top, 4)
+            Button("Already have access? Dismiss") { fdaDismissed = true }
+                .buttonStyle(.link)
+                .font(.caption)
+                .padding(.top, 2)
         }
         // Re-check periodically so the card clears itself once access becomes effective.
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in

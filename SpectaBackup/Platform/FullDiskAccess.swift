@@ -9,8 +9,10 @@
 //  @lastUpdated 2026-07-01
 //
 //  Notes:
-//  - Heuristic: TCC.db is only readable with Full Disk Access granted. Cheap and reliable enough to
-//    gate the onboarding banner; per-source read failures are still surfaced as job errors.
+//  - Detection opens the user TCC.db for reading (only possible with Full Disk Access). We open+read
+//    rather than access()/isReadableFile because the latter doesn't reliably reflect TCC. The
+//    onboarding card is also dismissible, so a wrong negative never blocks the user; real per-source
+//    read failures are surfaced as job errors regardless.
 //
 
 import AppKit
@@ -19,7 +21,16 @@ import Foundation
 enum FullDiskAccess {
     static var isGranted: Bool {
         let path = ("~/Library/Application Support/com.apple.TCC/TCC.db" as NSString).expandingTildeInPath
-        return FileManager.default.isReadableFile(atPath: path)
+        // The user TCC.db is only readable with Full Disk Access. Probe it with a real open + read —
+        // that actually goes through TCC. `access()` / `isReadableFile` does NOT reliably reflect TCC
+        // (it returned false even with FDA granted on recent macOS, wrongly showing the onboarding).
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
+            // Open failed: either denied (no FDA) or the file is missing. If it's missing we can't
+            // tell, so don't hard-gate — real per-source read failures still surface as job errors.
+            return !FileManager.default.fileExists(atPath: path)
+        }
+        defer { try? handle.close() }
+        return (try? handle.read(upToCount: 1)) != nil
     }
 
     @MainActor

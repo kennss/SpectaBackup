@@ -4,6 +4,17 @@ All notable changes to SpectArk are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] — 2026-07-01
+
+### Fixed
+- The window fix from 1.1.1 now actually holds: frame restoration is disabled and the window is
+  re-fit whenever it ends up larger than the screen (the previous `maxSize` cap didn't constrain
+  SwiftUI's programmatic restore).
+- Full Disk Access is now detected by really opening the TCC database (which goes through the
+  permission system) instead of `access()`, which reported "not granted" even when it was. The
+  onboarding card is also dismissible ("Already have access? Dismiss") so a wrong reading never
+  blocks you.
+
 ## [1.1.1] — 2026-07-01
 
 ### Added
@@ -51,6 +62,7 @@ the bundle id and existing backups carry over).
 - Dashboard window + menu-bar dropdown with live throughput and free space.
 - Developer ID signed and notarized; universal (Apple Silicon + Intel), macOS 14+.
 
+[1.1.2]: https://github.com/kennss/SpectArk/releases/tag/v1.1.2
 [1.1.1]: https://github.com/kennss/SpectArk/releases/tag/v1.1.1
 [1.1.0]: https://github.com/kennss/SpectArk/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kennss/SpectArk/releases/tag/v1.0.0
